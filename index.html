@@ -17,13 +17,14 @@
 <body>
 <div id="app">
   <header>
-    <h1>⚽ Quiniela Liga MX</h1>
+    <h1 id="app-titulo">⚽ Quiniela Liga MX</h1>
     <p>Manda tu marcador y revisa la tabla general</p>
   </header>
 
   <nav class="tabs">
     <button id="tab-capturar" class="activo">Capturar</button>
     <button id="tab-tabla">Tabla general</button>
+    <button id="tab-resultados" hidden>Resultados</button>
   </nav>
 
   <main>
@@ -41,6 +42,10 @@
 
     <section id="vista-tabla" class="vista">
       <div id="contenido-tabla"><p class="centro">Cargando tabla…</p></div>
+    </section>
+
+    <section id="vista-resultados" class="vista">
+      <div id="contenido-resultados"><p class="centro">Cargando…</p></div>
     </section>
   </main>
 </div>

@@ -13,6 +13,13 @@ const estado = {
   marcadores: [],
 };
 
+// Estado de la pestaña oculta "Resultados" (solo para el admin) -- separado
+// de "estado" a propósito, para no cruzar datos con la pestaña Capturar.
+const estadoAdmin = {
+  jornada: null,
+  partidos: [],
+};
+
 document.addEventListener("DOMContentLoaded", function () {
   if (!WEBAPP_URL || WEBAPP_URL.indexOf("PEGA_AQUI") !== -1) {
     mostrarErrorConfiguracion();
@@ -27,6 +34,7 @@ document.addEventListener("DOMContentLoaded", function () {
   document.getElementById("form-quiniela").addEventListener("submit", enviarQuiniela);
 
   iniciarCapturar();
+  iniciarGestoAdmin();
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("./sw.js").catch(function () { /* sin service worker no pasa nada grave */ });
@@ -317,6 +325,162 @@ function renderTabla(datos) {
     "<tbody>" + (filas || '<tr><td colspan="2" class="centro">Todavía nadie se ha registrado.</td></tr>') + "</tbody>" +
     "</table>" +
     "</div>";
+}
+
+// ---------- pestaña oculta "Resultados" (solo admin) ----------
+//
+// Nadie más ve esta pestaña ni sabe que existe: toca 5 veces seguidas el
+// título "⚽ Quiniela Liga MX" de arriba y te va a pedir un PIN. Si ya la
+// desbloqueaste antes en este mismo celular, se queda activada sola (no hay
+// que repetir el toque cada vez que abras la app). El PIN de verdad solo lo
+// valida el Sheet al guardar -- si algún día lo cambias allá, aquí también
+// hay que volver a tocar el título y escribir el nuevo.
+let contadorToques = 0;
+let ultimoToque = 0;
+
+function iniciarGestoAdmin() {
+  document.getElementById("app-titulo").addEventListener("click", function () {
+    const ahora = Date.now();
+    contadorToques = (ahora - ultimoToque < 2500) ? contadorToques + 1 : 1;
+    ultimoToque = ahora;
+    if (contadorToques >= 5) {
+      contadorToques = 0;
+      const pin = window.prompt("PIN de administrador:");
+      if (pin) {
+        localStorage.setItem("quiniela_admin_pin", pin);
+        activarPestanaAdmin();
+        window.alert("Listo. Si el PIN no era el correcto, te lo va a decir en cuanto intentes guardar un resultado.");
+      }
+    }
+  });
+
+  if (localStorage.getItem("quiniela_admin_pin")) activarPestanaAdmin();
+}
+
+function activarPestanaAdmin() {
+  const boton = document.getElementById("tab-resultados");
+  boton.hidden = false;
+  if (!boton.dataset.wired) {
+    boton.dataset.wired = "1";
+    boton.addEventListener("click", function () {
+      cambiarVista("resultados");
+      cargarResultadosAdmin();
+    });
+  }
+}
+
+async function cargarResultadosAdmin(jornadaParam) {
+  const cont = document.getElementById("contenido-resultados");
+  cont.innerHTML = '<p class="centro">Cargando partidos…</p>';
+  try {
+    let jornada = jornadaParam;
+    if (!jornada) {
+      const activa = await apiGet("activa");
+      if (!activa.ok) throw new Error(activa.error || "No se pudo leer la jornada activa.");
+      jornada = activa.jornada;
+    }
+    estadoAdmin.jornada = jornada;
+    const datos = await apiGet("partidos", { jornada: jornada });
+    if (!datos.ok) {
+      cont.innerHTML = navJornadaAdminHtml(jornada) + '<div class="aviso info">' + escaparHtml(datos.error) + "</div>";
+      activarNavJornadaAdmin();
+      return;
+    }
+    estadoAdmin.jornada = datos.jornada;
+    estadoAdmin.partidos = datos.partidos;
+    renderResultadosAdmin(datos);
+  } catch (err) {
+    cont.innerHTML = '<div class="aviso error">Sin conexión con el Sheet ahorita.<br><small>' + escaparHtml(String(err.message || err)) + "</small></div>";
+  }
+}
+
+function navJornadaAdminHtml(jornada) {
+  return (
+    '<div class="jornada-nav">' +
+    '<button type="button" id="jornada-prev-admin" class="nav-flecha" aria-label="Jornada anterior">‹</button>' +
+    '<span class="chip">Jornada ' + jornada + "</span>" +
+    '<button type="button" id="jornada-next-admin" class="nav-flecha" aria-label="Jornada siguiente">›</button>' +
+    "</div>"
+  );
+}
+
+function activarNavJornadaAdmin() {
+  document.getElementById("jornada-prev-admin").addEventListener("click", function () { cambiarJornadaAdmin(-1); });
+  document.getElementById("jornada-next-admin").addEventListener("click", function () { cambiarJornadaAdmin(1); });
+}
+
+function cambiarJornadaAdmin(delta) {
+  const nueva = Math.min(17, Math.max(1, estadoAdmin.jornada + delta));
+  if (nueva === estadoAdmin.jornada) return;
+  cargarResultadosAdmin(nueva);
+}
+
+function renderResultadosAdmin(datos) {
+  const cont = document.getElementById("contenido-resultados");
+  const filas = datos.partidos.map(function (p, i) {
+    return (
+      '<div class="partido" data-i="' + i + '" data-num="' + p.num + '">' +
+      '<div class="equipo local">' + escudoHtml(p.local) + '<span class="nombre-equipo">' + escaparHtml(p.local) + "</span></div>" +
+      '<div class="marcador">' +
+      '<input type="number" inputmode="numeric" min="0" max="30" class="input-resultado" data-lado="local" value="' + (p.local_goles === "" ? "" : p.local_goles) + '">' +
+      '<span class="vs">-</span>' +
+      '<input type="number" inputmode="numeric" min="0" max="30" class="input-resultado" data-lado="visita" value="' + (p.visita_goles === "" ? "" : p.visita_goles) + '">' +
+      "</div>" +
+      '<div class="equipo visita">' + escudoHtml(p.visita) + '<span class="nombre-equipo">' + escaparHtml(p.visita) + "</span></div>" +
+      "</div>"
+    );
+  }).join("");
+
+  cont.innerHTML =
+    '<div class="tarjeta">' +
+    navJornadaAdminHtml(datos.jornada) +
+    '<div class="aviso info">Deja un partido en blanco si todavía no termina. En cuanto completes los 9, esa jornada cierra sola para todos (ya no se aceptan más quinielas).</div>' +
+    '<div id="lista-resultados">' + filas + "</div>" +
+    '<div id="mensaje-resultados"></div>' +
+    '<button type="button" id="btn-guardar-resultados" class="principal">Guardar resultados</button>' +
+    "</div>";
+
+  activarNavJornadaAdmin();
+  document.getElementById("btn-guardar-resultados").addEventListener("click", guardarResultadosAdmin);
+}
+
+async function guardarResultadosAdmin() {
+  const msg = document.getElementById("mensaje-resultados");
+  const boton = document.getElementById("btn-guardar-resultados");
+  const filas = document.querySelectorAll("#lista-resultados .partido");
+  const resultados = Array.prototype.map.call(filas, function (fila) {
+    const num = Number(fila.dataset.num);
+    const local = fila.querySelector('[data-lado="local"]').value.trim();
+    const visita = fila.querySelector('[data-lado="visita"]').value.trim();
+    return { num: num, local_goles: local, visita_goles: visita };
+  });
+
+  boton.disabled = true;
+  boton.textContent = "Guardando…";
+  msg.innerHTML = "";
+
+  try {
+    const resp = await apiPost({
+      action: "guardarResultados",
+      pin: localStorage.getItem("quiniela_admin_pin") || "",
+      jornada: estadoAdmin.jornada,
+      resultados: resultados,
+    });
+    if (resp.ok) {
+      const avisoCierre = resp.cerrada ? " La jornada quedó cerrada -- ya no se aceptan más quinielas." : "";
+      msg.innerHTML = '<div class="aviso exito">' + escaparHtml(resp.mensaje + avisoCierre) + "</div>";
+    } else {
+      msg.innerHTML = '<div class="aviso error">' + escaparHtml(resp.error) + "</div>";
+      if (String(resp.error || "").indexOf("PIN") !== -1) {
+        localStorage.removeItem("quiniela_admin_pin");
+      }
+    }
+  } catch (err) {
+    msg.innerHTML = '<div class="aviso error">No se pudo guardar (revisa tu conexión) e intenta de nuevo.</div>';
+  } finally {
+    boton.disabled = false;
+    boton.textContent = "Guardar resultados";
+  }
 }
 
 function escaparHtml(texto) {

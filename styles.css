@@ -70,6 +70,17 @@ nav.tabs button.activo {
   border-bottom-color: var(--dorado);
 }
 
+nav.tabs button.tab-admin {
+  flex: 0 0 auto;
+  padding: 12px 14px;
+  color: #aaa;
+  font-size: 0.8rem;
+}
+
+nav.tabs button.tab-admin.activo {
+  color: var(--azul);
+}
+
 main {
   max-width: 560px;
   margin: 0 auto;
@@ -194,6 +205,15 @@ input[type="text"] {
   border: 1px solid #ccc;
   border-radius: 8px;
   background: var(--gris-claro);
+  -moz-appearance: textfield; /* Firefox: sin flechitas de subir/bajar */
+}
+
+/* Chrome/Safari: oculta las flechitas de subir/bajar del input numérico --
+   se quiere una casilla simple donde se escribe el número, no un contador. */
+.input-resultado::-webkit-outer-spin-button,
+.input-resultado::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .marcador-fijo {

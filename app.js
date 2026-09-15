@@ -163,9 +163,9 @@ function renderPartidos(datos, miQuiniela) {
         '<span class="valor-fijo">' + escaparHtml(miQuiniela[i].visita) + "</span>" +
         "</div>"
       : '<div class="marcador">' +
-        '<input type="number" inputmode="numeric" min="0" max="15" class="input-resultado" data-lado="local" value="0">' +
+        '<input type="number" inputmode="numeric" min="0" max="15" class="input-resultado" data-lado="local" value="" placeholder="0">' +
         '<span class="vs">-</span>' +
-        '<input type="number" inputmode="numeric" min="0" max="15" class="input-resultado" data-lado="visita" value="0">' +
+        '<input type="number" inputmode="numeric" min="0" max="15" class="input-resultado" data-lado="visita" value="" placeholder="0">' +
         "</div>";
     return (
       '<div class="partido" data-i="' + i + '">' +

@@ -31,10 +31,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
   document.getElementById("tab-capturar").addEventListener("click", function () { cambiarVista("capturar"); });
   document.getElementById("tab-tabla").addEventListener("click", function () { cambiarVista("tabla"); cargarTabla(); });
+  document.getElementById("tab-resultados").addEventListener("click", abrirAdmin);
   document.getElementById("form-quiniela").addEventListener("submit", enviarQuiniela);
 
   iniciarCapturar();
-  iniciarGestoAdmin();
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("./sw.js").catch(function () { /* sin service worker no pasa nada grave */ });
@@ -162,7 +162,11 @@ function renderPartidos(datos, miQuiniela) {
         '<span class="vs">-</span>' +
         '<span class="valor-fijo">' + escaparHtml(miQuiniela[i].visita) + "</span>" +
         "</div>"
-      : '<div class="marcador">' + stepperHtml(i, "local") + '<span class="vs">-</span>' + stepperHtml(i, "visita") + "</div>";
+      : '<div class="marcador">' +
+        '<input type="number" inputmode="numeric" min="0" max="15" class="input-resultado" data-lado="local" value="0">' +
+        '<span class="vs">-</span>' +
+        '<input type="number" inputmode="numeric" min="0" max="15" class="input-resultado" data-lado="visita" value="0">' +
+        "</div>";
     return (
       '<div class="partido" data-i="' + i + '">' +
       '<div class="equipo local">' + escudoHtml(p.local) + '<span class="nombre-equipo">' + escaparHtml(p.local) + "</span></div>" +
@@ -192,14 +196,12 @@ function renderPartidos(datos, miQuiniela) {
   document.getElementById("form-quiniela").style.display = (cerrada || yaRegistrada) ? "none" : "";
 
   if (!cerrada && !yaRegistrada) {
-    cont.querySelectorAll(".stepper button").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        const i = Number(btn.closest(".partido").dataset.i);
-        const lado = btn.dataset.lado;
-        const delta = Number(btn.dataset.delta);
-        const nuevo = Math.max(0, Math.min(15, estado.marcadores[i][lado] + delta));
-        estado.marcadores[i][lado] = nuevo;
-        btn.closest(".stepper").querySelector(".valor").textContent = nuevo;
+    cont.querySelectorAll(".input-resultado").forEach(function (input) {
+      input.addEventListener("input", function () {
+        const i = Number(input.closest(".partido").dataset.i);
+        const lado = input.dataset.lado;
+        const val = parseInt(input.value, 10);
+        estado.marcadores[i][lado] = isNaN(val) ? 0 : Math.max(0, Math.min(15, val));
       });
     });
   }
@@ -214,16 +216,6 @@ function escudoHtml(nombreEquipo) {
   const nombre = String(nombreEquipo || "").trim();
   if (!nombre) return "";
   return '<img class="escudo" src="./logos/' + encodeURIComponent(nombre) + '.png" alt="" loading="lazy" onerror="this.style.display=\'none\'">';
-}
-
-function stepperHtml(i, lado) {
-  return (
-    '<div class="stepper">' +
-    '<button type="button" data-lado="' + lado + '" data-delta="-1">−</button>' +
-    '<span class="valor">0</span>' +
-    '<button type="button" data-lado="' + lado + '" data-delta="1">+</button>' +
-    "</div>"
-  );
 }
 
 async function cargarRegistros(jornada) {
@@ -327,46 +319,22 @@ function renderTabla(datos) {
     "</div>";
 }
 
-// ---------- pestaña oculta "Resultados" (solo admin) ----------
+// ---------- pestaña "Resultados" (solo admin) ----------
 //
-// Nadie más ve esta pestaña ni sabe que existe: toca 5 veces seguidas el
-// título "⚽ Quiniela Liga MX" de arriba y te va a pedir un PIN. Si ya la
-// desbloqueaste antes en este mismo celular, se queda activada sola (no hay
-// que repetir el toque cada vez que abras la app). El PIN de verdad solo lo
-// valida el Sheet al guardar -- si algún día lo cambias allá, aquí también
-// hay que volver a tocar el título y escribir el nuevo.
-let contadorToques = 0;
-let ultimoToque = 0;
-
-function iniciarGestoAdmin() {
-  document.getElementById("app-titulo").addEventListener("click", function () {
-    const ahora = Date.now();
-    contadorToques = (ahora - ultimoToque < 2500) ? contadorToques + 1 : 1;
-    ultimoToque = ahora;
-    if (contadorToques >= 5) {
-      contadorToques = 0;
-      const pin = window.prompt("PIN de administrador:");
-      if (pin) {
-        localStorage.setItem("quiniela_admin_pin", pin);
-        activarPestanaAdmin();
-        window.alert("Listo. Si el PIN no era el correcto, te lo va a decir en cuanto intentes guardar un resultado.");
-      }
-    }
-  });
-
-  if (localStorage.getItem("quiniela_admin_pin")) activarPestanaAdmin();
-}
-
-function activarPestanaAdmin() {
-  const boton = document.getElementById("tab-resultados");
-  boton.hidden = false;
-  if (!boton.dataset.wired) {
-    boton.dataset.wired = "1";
-    boton.addEventListener("click", function () {
-      cambiarVista("resultados");
-      cargarResultadosAdmin();
-    });
+// El botón "🔒 Admin" lo ve cualquiera en la barra de arriba, pero no sirve
+// de nada sin el PIN: la primera vez que le dan clic pide un PIN y lo guarda
+// en ESE celular (no hay que volver a escribirlo cada vez que abran la app
+// ahí); si alguien pone un PIN incorrecto simplemente no va a poder guardar
+// ningún resultado -- el Sheet es quien de verdad valida el PIN, así que no
+// hay riesgo de que alguien sin el PIN correcto llegue a cambiar algo.
+function abrirAdmin() {
+  if (!localStorage.getItem("quiniela_admin_pin")) {
+    const pin = window.prompt("PIN de administrador:");
+    if (!pin) return; // canceló, no entra a la pestaña
+    localStorage.setItem("quiniela_admin_pin", pin);
   }
+  cambiarVista("resultados");
+  cargarResultadosAdmin();
 }
 
 async function cargarResultadosAdmin(jornadaParam) {
@@ -470,8 +438,12 @@ async function guardarResultadosAdmin() {
       const avisoCierre = resp.cerrada ? " La jornada quedó cerrada -- ya no se aceptan más quinielas." : "";
       msg.innerHTML = '<div class="aviso exito">' + escaparHtml(resp.mensaje + avisoCierre) + "</div>";
     } else {
-      msg.innerHTML = '<div class="aviso error">' + escaparHtml(resp.error) + "</div>";
-      if (String(resp.error || "").indexOf("PIN") !== -1) {
+      const esPinMalo = String(resp.error || "").indexOf("PIN") !== -1;
+      msg.innerHTML =
+        '<div class="aviso error">' + escaparHtml(resp.error) +
+        (esPinMalo ? " Vuelve a darle clic al botón 🔒 Admin para escribirlo de nuevo." : "") +
+        "</div>";
+      if (esPinMalo) {
         localStorage.removeItem("quiniela_admin_pin");
       }
     }

@@ -31,9 +31,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
   document.getElementById("tab-capturar").addEventListener("click", function () { cambiarVista("capturar"); });
   document.getElementById("tab-tabla").addEventListener("click", function () { cambiarVista("tabla"); cargarTabla(); });
-  document.getElementById("tab-resultados").addEventListener("click", abrirAdmin);
   document.getElementById("form-quiniela").addEventListener("submit", enviarQuiniela);
 
+  iniciarAdmin();
   iniciarCapturar();
 
   if ("serviceWorker" in navigator) {
@@ -327,6 +327,29 @@ function renderTabla(datos) {
 // ahí); si alguien pone un PIN incorrecto simplemente no va a poder guardar
 // ningún resultado -- el Sheet es quien de verdad valida el PIN, así que no
 // hay riesgo de que alguien sin el PIN correcto llegue a cambiar algo.
+//
+// iniciarAdmin() deja el botón listo SIN depender de cómo esté publicado
+// index.html -- si en GitHub quedó una copia vieja del archivo (por ejemplo
+// de cuando el botón todavía estaba oculto), esto lo corrige solo: le quita
+// cualquier "hidden" que pueda traer, le pone el texto/ícono correctos, y si
+// por alguna razón el botón ni siquiera existe en esa página, lo crea. Así
+// esta pestaña nunca vuelve a depender de tener TODOS los archivos
+// perfectamente sincronizados en GitHub.
+function iniciarAdmin() {
+  let boton = document.getElementById("tab-resultados");
+  if (!boton) {
+    boton = document.createElement("button");
+    boton.id = "tab-resultados";
+    const nav = document.querySelector("nav.tabs");
+    if (nav) nav.appendChild(boton);
+  }
+  boton.hidden = false;
+  boton.removeAttribute("hidden");
+  boton.classList.add("tab-admin");
+  boton.textContent = "🔒 Admin";
+  boton.addEventListener("click", abrirAdmin);
+}
+
 function abrirAdmin() {
   if (!localStorage.getItem("quiniela_admin_pin")) {
     const pin = window.prompt("PIN de administrador:");

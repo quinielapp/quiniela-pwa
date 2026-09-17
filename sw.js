@@ -4,7 +4,7 @@
  * (partidos, tabla, envíos) siempre se piden en vivo al Sheet, nunca se
  * guardan en caché, porque tienen que estar actualizados.
  */
-const CACHE_NAME = "quiniela-shell-v12";
+const CACHE_NAME = "quiniela-shell-v13";
 const ARCHIVOS_SHELL = [
   "./",
   "./index.html",

@@ -295,16 +295,20 @@ async function cargarTabla() {
 function renderTabla(datos) {
   const miNombre = (localStorage.getItem("quiniela_nombre") || "").trim().toLowerCase();
   const cont = document.getElementById("contenido-tabla");
+  const medallas = { 1: "🥇", 2: "🥈", 3: "🥉" };
   const filas = datos.filas.map(function (fila, idx) {
+    const puesto = idx + 1;
     const esYo = fila.nombre.trim().toLowerCase() === miNombre;
     const clasesFila = [];
-    if (idx === 0) clasesFila.push("puesto-1");
-    if (idx === 1) clasesFila.push("puesto-2");
-    if (idx === 2) clasesFila.push("puesto-3");
-    if (esYo) clasesFila.push("total"); // resalta al usuario (reutiliza estilo bold)
+    if (puesto <= 3) clasesFila.push("puesto-" + puesto);
+    if (esYo) clasesFila.push("fila-yo");
+    const badge = medallas[puesto]
+      ? '<span class="badge-puesto badge-medalla">' + medallas[puesto] + "</span>"
+      : '<span class="badge-puesto">' + puesto + "</span>";
     return (
       "<tr" + (clasesFila.length ? ' class="' + clasesFila.join(" ") + '"' : "") + ">" +
-      "<td>" + escaparHtml(fila.nombre) + (esYo ? " (tú)" : "") + "</td>" +
+      '<td class="celda-puesto">' + badge + "</td>" +
+      '<td class="celda-nombre">' + escaparHtml(fila.nombre) + (esYo ? ' <span class="chip-tu">tú</span>' : "") + "</td>" +
       '<td class="total">' + fila.total + "</td>" +
       "</tr>"
     );
@@ -313,8 +317,8 @@ function renderTabla(datos) {
   cont.innerHTML =
     '<div class="tarjeta tabla-scroll">' +
     '<table class="tabla-general">' +
-    "<thead><tr><th>Nombre</th><th>Jornada " + datos.jornada + "</th></tr></thead>" +
-    "<tbody>" + (filas || '<tr><td colspan="2" class="centro">Todavía nadie se ha registrado.</td></tr>') + "</tbody>" +
+    "<thead><tr><th></th><th>Nombre</th><th>Jornada " + datos.jornada + "</th></tr></thead>" +
+    "<tbody>" + (filas || '<tr><td colspan="3" class="centro">Todavía nadie se ha registrado.</td></tr>') + "</tbody>" +
     "</table>" +
     "</div>";
 }

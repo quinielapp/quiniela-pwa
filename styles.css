@@ -1,7 +1,10 @@
 :root {
   --azul: #1F4E78;
   --azul-oscuro: #0B2340;
+  --azul-noche: #050B16;
+  --verde-cancha: #0E3B22;
   --dorado: #E8B923;
+  --dorado-claro: #F7D774;
   --gris-claro: #F2F6FA;
   --verde: #1E7A34;
   --rojo: #B3261E;
@@ -13,7 +16,6 @@
 html, body {
   margin: 0;
   padding: 0;
-  background: var(--gris-claro);
   color: var(--texto);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
   -webkit-tap-highlight-color: transparent;
@@ -21,64 +23,95 @@ html, body {
 
 body {
   padding-bottom: 32px;
+  min-height: 100vh;
+  /* "Cancha de noche": degradado oscuro azul-verde + un patrón sutil de
+     balones repetido encima (SVG en línea, sin necesidad de subir ninguna
+     imagen aparte a GitHub) + un brillo tipo reflector arriba. */
+  background-color: var(--azul-noche);
+  background-image:
+    radial-gradient(ellipse 900px 500px at 50% -10%, rgba(232, 185, 35, 0.10), transparent 60%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='84' height='84' viewBox='0 0 84 84'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='0.05' stroke-width='1.3'%3E%3Ccircle cx='42' cy='42' r='13'/%3E%3Cpath d='M42 29 L52 36 L48 48 L36 48 L32 36 Z'/%3E%3C/g%3E%3C/svg%3E"),
+    linear-gradient(160deg, var(--azul-noche) 0%, #0A2036 45%, var(--verde-cancha) 130%);
+  background-attachment: fixed, fixed, fixed;
+  background-repeat: no-repeat, repeat, no-repeat;
 }
 
+
 header {
-  background: linear-gradient(135deg, var(--azul-oscuro), var(--azul));
+  position: relative;
+  background:
+    radial-gradient(circle at 85% -20%, rgba(232, 185, 35, 0.25), transparent 55%),
+    linear-gradient(135deg, var(--azul-noche), var(--azul-oscuro) 55%, var(--azul) 130%);
   color: #fff;
-  padding: 20px 16px 16px;
+  padding: 26px 16px 20px;
   text-align: center;
   position: sticky;
   top: 0;
   z-index: 10;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+  overflow: hidden;
+}
+
+header::after {
+  /* franja doradita abajo del todo, como la línea de cal de una cancha */
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, var(--dorado), transparent);
+  opacity: 0.85;
 }
 
 header h1 {
-  margin: 0 0 4px;
-  font-size: 1.25rem;
+  margin: 0 0 6px;
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.35);
 }
 
 header p {
   margin: 0;
   font-size: 0.85rem;
-  opacity: 0.85;
+  color: #C9D6E6;
+  opacity: 0.95;
 }
 
 nav.tabs {
   display: flex;
-  background: #fff;
-  border-bottom: 1px solid #e0e0e0;
+  background: linear-gradient(180deg, var(--azul-oscuro), #0d2c4a);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
   position: sticky;
-  top: 68px;
+  top: 94px;
   z-index: 9;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.2);
 }
 
 nav.tabs button {
   flex: 1;
-  padding: 12px 4px;
+  padding: 13px 4px;
   border: none;
   background: none;
   font-size: 0.9rem;
   font-weight: 600;
-  color: #777;
+  color: #8FA4BE;
   border-bottom: 3px solid transparent;
 }
 
 nav.tabs button.activo {
-  color: var(--azul);
+  color: #fff;
   border-bottom-color: var(--dorado);
 }
 
 nav.tabs button.tab-admin {
   flex: 0 0 auto;
-  padding: 12px 14px;
-  color: #aaa;
+  padding: 13px 14px;
+  color: #55647A;
   font-size: 0.8rem;
 }
 
 nav.tabs button.tab-admin.activo {
-  color: var(--azul);
+  color: var(--dorado-claro);
 }
 
 main {
@@ -92,10 +125,10 @@ main {
 
 .tarjeta {
   background: #fff;
-  border-radius: 12px;
+  border-radius: 16px;
   padding: 16px;
   margin-bottom: 14px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  box-shadow: 0 8px 24px rgba(5, 11, 22, 0.28);
 }
 
 .aviso {
@@ -216,6 +249,12 @@ input[type="text"] {
   margin: 0;
 }
 
+.input-resultado::placeholder {
+  color: #A9B9CC;
+  font-weight: 600;
+  opacity: 1;
+}
+
 .marcador-fijo {
   background: var(--gris-claro);
   border-radius: 8px;
@@ -237,9 +276,10 @@ button.principal {
   font-size: 1rem;
   font-weight: 700;
   color: #fff;
-  background: var(--azul);
+  background: linear-gradient(135deg, var(--azul), var(--azul-oscuro));
   border: none;
-  border-radius: 10px;
+  border-radius: 12px;
+  box-shadow: 0 4px 14px rgba(31, 78, 120, 0.35);
   margin-top: 8px;
 }
 
@@ -349,20 +389,62 @@ table.tabla-general th, table.tabla-general td {
   white-space: nowrap;
 }
 
-table.tabla-general th:first-child, table.tabla-general td:first-child {
+table.tabla-general th:nth-child(2), table.tabla-general td.celda-nombre {
   text-align: left;
-  position: sticky;
-  left: 0;
-  background: #fff;
+}
+
+table.tabla-general th:first-child, table.tabla-general td.celda-puesto {
+  width: 34px;
+  padding-right: 0;
 }
 
 table.tabla-general tr:nth-child(even) td { background: var(--gris-claro); }
-table.tabla-general tr:nth-child(even) td:first-child { background: #EAF0F7; }
 
 table.tabla-general .total { font-weight: 800; color: var(--azul); }
-table.tabla-general .puesto-1 td:first-child::before { content: "🥇 "; }
-table.tabla-general .puesto-2 td:first-child::before { content: "🥈 "; }
-table.tabla-general .puesto-3 td:first-child::before { content: "🥉 "; }
+
+.badge-puesto {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #E4EAF2;
+  color: var(--azul);
+  font-weight: 800;
+  font-size: 0.72rem;
+}
+
+.badge-medalla {
+  background: none;
+  font-size: 1.05rem;
+  width: auto;
+  height: auto;
+}
+
+tr.puesto-1 td { background: linear-gradient(90deg, rgba(232, 185, 35, 0.16), rgba(232, 185, 35, 0.04)); }
+tr.puesto-2 td { background: linear-gradient(90deg, rgba(160, 174, 192, 0.22), rgba(160, 174, 192, 0.05)); }
+tr.puesto-3 td { background: linear-gradient(90deg, rgba(184, 115, 51, 0.16), rgba(184, 115, 51, 0.04)); }
+
+tr.fila-yo td {
+  box-shadow: inset 3px 0 0 var(--azul);
+}
+
+tr.fila-yo td.celda-nombre { font-weight: 800; color: var(--azul); }
+
+.chip-tu {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--azul);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
 
 .tabla-scroll { overflow-x: auto; }
 

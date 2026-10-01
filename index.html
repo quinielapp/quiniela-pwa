@@ -13,17 +13,21 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Quiniela">
 <link rel="stylesheet" href="./styles.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&display=swap" rel="stylesheet">
 </head>
 <body>
 <div id="app">
   <header>
-    <h1>⚽ Quiniela Liga MX</h1>
+    <h1><span class="h1-bola" aria-hidden="true">⚽</span>Quiniela Liga MX<span class="h1-bola" aria-hidden="true">⚽</span></h1>
     <p>Manda tu marcador y revisa la tabla general</p>
   </header>
 
   <nav class="tabs">
     <button id="tab-capturar" class="activo">Capturar</button>
     <button id="tab-tabla">Tabla general</button>
+    <button id="tab-quinielas">Quinielas</button>
     <button id="tab-resultados" class="tab-admin">🔒 Admin</button>
   </nav>
 
@@ -42,6 +46,10 @@
 
     <section id="vista-tabla" class="vista">
       <div id="contenido-tabla"><p class="centro">Cargando tabla…</p></div>
+    </section>
+
+    <section id="vista-quinielas" class="vista">
+      <div id="contenido-quinielas"><p class="centro">Cargando…</p></div>
     </section>
 
     <section id="vista-resultados" class="vista">

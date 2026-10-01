@@ -56,6 +56,7 @@ function doGet(e) {
     if (accion === "tabla") return salidaJson(apiTabla(ss));
     if (accion === "registros") return salidaJson(apiRegistros(ss, e.parameter.jornada));
     if (accion === "miquiniela") return salidaJson(apiMiQuiniela(ss, e.parameter.nombre, e.parameter.jornada));
+    if (accion === "quinielas") return salidaJson(apiQuinielasJornada(ss, e.parameter.jornada));
 
     return salidaJson({ ok: false, error: "Acción desconocida: " + accion });
   } catch (err) {
@@ -220,6 +221,42 @@ function apiMiQuiniela(ss, nombreParam, jornadaParam) {
   return { ok: true, registrada: true, marcadores: marcadores };
 }
 
+// Devuelve la quiniela de TODOS los que se registraron en una jornada --
+// solo cuando esa jornada ya cerró (los 9 resultados reales ya están
+// capturados en PARTIDOS). Mientras siga abierta se regresa vacío a propósito
+// (aunque alguien llame el endpoint directo), para que nadie pueda ver ni
+// copiar lo que puso otro antes de mandar la suya -- eso sería tan trampa
+// como poder editar tu propia quiniela después de enviarla.
+function apiQuinielasJornada(ss, jornadaParam) {
+  var jornada = Number(jornadaParam);
+  if (!jornada) return { ok: false, error: "Falta la jornada." };
+
+  var partidos = getPartidosConResultado(ss, jornada);
+  var cerrada = partidos.length === 9 && partidos.every(function (p) { return p.local_goles !== "" && p.visita_goles !== ""; });
+  if (!cerrada) {
+    return { ok: true, jornada: jornada, cerrada: false, filas: [] };
+  }
+
+  var sheet = ss.getSheetByName(HOJA_RESPUESTAS);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < PRIMERA_FILA_RESPUESTAS) return { ok: true, jornada: jornada, cerrada: true, filas: [] };
+
+  var data = sheet.getRange(PRIMERA_FILA_RESPUESTAS, 4, lastRow - PRIMERA_FILA_RESPUESTAS + 1, 20).getValues(); // D:W
+  var filas = [];
+  for (var i = 0; i < data.length; i++) {
+    var row = data[i];
+    if (Number(row[1]) !== jornada) continue;
+    var nombre = String(row[0] || "").trim();
+    if (!nombre) continue;
+    var marcadores = [];
+    for (var j = 0; j < 9; j++) {
+      marcadores.push({ local: row[2 + j * 2], visita: row[3 + j * 2] });
+    }
+    filas.push({ nombre: nombre, marcadores: marcadores });
+  }
+  return { ok: true, jornada: jornada, cerrada: true, filas: filas };
+}
+
 // Le permite SOLO al admin (dueño del PIN) capturar el resultado real de los
 // partidos desde el celular -- escribe directo en PARTIDOS, columnas
 // GolesLocal/GolesVisita (F y G), exactamente como si lo hicieras a mano en
@@ -308,13 +345,26 @@ function apiSubmit(ss, body) {
 // Detecta si esta persona ya tiene una quiniela registrada para esta jornada
 // (desde la PWA o desde el Form -- ambos caen en la misma hoja), para no
 // dejar que la sobrescriba. Ver el comentario en apiSubmit.
+// Normaliza un nombre para comparar: sin mayúsculas/minúsculas, sin espacios
+// de sobra ni acentos -- así "Héctor  Puente" y "hector puente" se
+// reconocen como la misma persona sin importar cómo lo haya escrito cada
+// quien en su celular. Esto es clave para que "ya registré mi quiniela" y
+// "aquí está lo que capturaste" siempre encuentren la fila correcta.
+function normalizarNombre(s) {
+  return String(s || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/\s+/g, " ");
+}
+
 function buscarFilaExistente(sheet, nombre, jornada) {
   var lastRow = sheet.getLastRow();
   if (lastRow < PRIMERA_FILA_RESPUESTAS) return null;
   var data = sheet.getRange(PRIMERA_FILA_RESPUESTAS, 4, lastRow - PRIMERA_FILA_RESPUESTAS + 1, 2).getValues(); // D=Nombre, E=Jornada
-  var nombreBuscado = nombre.toLowerCase();
+  var nombreBuscado = normalizarNombre(nombre);
   for (var i = 0; i < data.length; i++) {
-    if (String(data[i][0]).trim().toLowerCase() === nombreBuscado && Number(data[i][1]) === jornada) {
+    if (normalizarNombre(data[i][0]) === nombreBuscado && Number(data[i][1]) === jornada) {
       return i + PRIMERA_FILA_RESPUESTAS;
     }
   }

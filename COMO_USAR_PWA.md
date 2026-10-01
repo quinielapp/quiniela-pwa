@@ -133,6 +133,14 @@ Android normalmente basta con cerrar la app y volver a abrirla.
   GolesLocal/GolesVisita) de esa jornada, la app deja de aceptar envíos para
   esa jornada y en vez del formulario muestra un aviso de que ya cerró — igual
   que pasa hoy si alguien intenta contestar el Form tarde.
+- Pestaña **Quinielas**: aquí cualquiera puede ver lo que registró CADA
+  participante para una jornada (con flechitas para moverte entre jornadas
+  pasadas), comparado partido por partido contra el resultado real, con 🎯 en
+  los que le atinaron exacto y un contador de aciertos en el encabezado de
+  cada quien. A propósito, esto solo se ve una vez que esa jornada ya cerró
+  (ya están los 9 resultados reales) — mientras siga abierta, la pestaña
+  avisa que todavía no está disponible, para que nadie pueda copiarle a nadie
+  antes de mandar su propia quiniela.
 
 ## Agregar los escudos de los equipos (opcional)
 

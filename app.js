@@ -20,6 +20,11 @@ const estadoAdmin = {
   partidos: [],
 };
 
+// Estado de la pestaña "Quinielas" (capturas de todos, solo lectura).
+const estadoQuinielas = {
+  jornada: null,
+};
+
 document.addEventListener("DOMContentLoaded", function () {
   if (!WEBAPP_URL || WEBAPP_URL.indexOf("PEGA_AQUI") !== -1) {
     mostrarErrorConfiguracion();
@@ -31,6 +36,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   document.getElementById("tab-capturar").addEventListener("click", function () { cambiarVista("capturar"); });
   document.getElementById("tab-tabla").addEventListener("click", function () { cambiarVista("tabla"); cargarTabla(); });
+  document.getElementById("tab-quinielas").addEventListener("click", function () { cambiarVista("quinielas"); cargarQuinielas(estadoQuinielas.jornada); });
   document.getElementById("form-quiniela").addEventListener("submit", enviarQuiniela);
 
   iniciarAdmin();
@@ -112,7 +118,12 @@ async function cargarJornada(jornada) {
     // así puede consultarlo sin tener que pedírtelo a ti.
     let miQuiniela = null;
     const nombreGuardado = (localStorage.getItem("quiniela_nombre") || "").trim();
-    if (!datos.cerrada && nombreGuardado) {
+    // OJO: esto se pide SIEMPRE que haya un nombre guardado, sin importar si
+    // la jornada ya cerró o no -- antes solo se pedía cuando seguía abierta,
+    // y por eso al refrescar la pestaña Capturar después de que ya se
+    // capturaron los resultados reales, parecía que "no habías registrado
+    // nada" aunque sí lo hubieras hecho.
+    if (nombreGuardado) {
       try {
         const mia = await apiGet("miquiniela", { nombre: nombreGuardado, jornada: datos.jornada });
         if (mia.ok && mia.registrada) miQuiniela = mia.marcadores;
@@ -155,18 +166,28 @@ function cambiarJornadaMostrada(delta) {
 function renderPartidos(datos, miQuiniela) {
   const cont = document.getElementById("contenido-capturar");
   const yaRegistrada = !!miQuiniela;
+  const cerrada = datos.cerrada;
+  // Si la jornada ya cerró y esta persona nunca registró su quiniela, ya no
+  // tiene caso enseñarle un formulario vacío (ya no se puede mandar) -- mejor
+  // se le enseña de una vez el resultado real de cada partido, de solo lectura.
+  const sinCapturaYCerrada = cerrada && !yaRegistrada;
   const bloques = datos.partidos.map(function (p, i) {
-    const marcadorHtml = yaRegistrada
-      ? '<div class="marcador marcador-fijo">' +
-        '<span class="valor-fijo">' + escaparHtml(miQuiniela[i].local) + "</span>" +
-        '<span class="vs">-</span>' +
-        '<span class="valor-fijo">' + escaparHtml(miQuiniela[i].visita) + "</span>" +
-        "</div>"
-      : '<div class="marcador">' +
+    let marcadorHtml;
+    if (yaRegistrada) {
+      marcadorHtml = marcadorFijoHtml(miQuiniela[i].local, miQuiniela[i].visita);
+    } else if (sinCapturaYCerrada) {
+      marcadorHtml = marcadorFijoHtml(
+        p.local_goles === "" ? "—" : p.local_goles,
+        p.visita_goles === "" ? "—" : p.visita_goles
+      );
+    } else {
+      marcadorHtml =
+        '<div class="marcador">' +
         '<input type="number" inputmode="numeric" min="0" max="15" class="input-resultado" data-lado="local" value="" placeholder="0">' +
         '<span class="vs">-</span>' +
         '<input type="number" inputmode="numeric" min="0" max="15" class="input-resultado" data-lado="visita" value="" placeholder="0">' +
         "</div>";
+    }
     return (
       '<div class="partido" data-i="' + i + '">' +
       '<div class="equipo local">' + escudoHtml(p.local) + '<span class="nombre-equipo">' + escaparHtml(p.local) + "</span></div>" +
@@ -176,10 +197,11 @@ function renderPartidos(datos, miQuiniela) {
     );
   }).join("");
 
-  const cerrada = datos.cerrada;
   let aviso = "";
-  if (cerrada) {
-    aviso = '<div class="aviso info">Esta jornada ya cerró (ya se capturaron los resultados reales). Aquí abajo puedes ver la tabla general.</div>';
+  if (cerrada && yaRegistrada) {
+    aviso = '<div class="aviso info">Esta jornada ya cerró (ya se capturaron los resultados reales). Aquí abajo está lo que registraste.</div>';
+  } else if (sinCapturaYCerrada) {
+    aviso = '<div class="aviso info">Esta jornada ya cerró y no alcanzaste a registrar tu quiniela. Aquí abajo puedes ver cómo quedaron los resultados reales.</div>';
   } else if (yaRegistrada) {
     aviso = '<div class="aviso exito">Ya enviaste tu quiniela para esta jornada ⚽ Aquí abajo está lo que registraste — ya no se puede cambiar. Si te equivocaste, pídele al admin que lo corrija directo en el Sheet.</div>';
   }
@@ -205,6 +227,16 @@ function renderPartidos(datos, miQuiniela) {
       });
     });
   }
+}
+
+function marcadorFijoHtml(local, visita) {
+  return (
+    '<div class="marcador marcador-fijo">' +
+    '<span class="valor-fijo">' + escaparHtml(local) + "</span>" +
+    '<span class="vs">-</span>' +
+    '<span class="valor-fijo">' + escaparHtml(visita) + "</span>" +
+    "</div>"
+  );
 }
 
 // Busca el logo en logos/<NOMBRE-TAL-CUAL-EN-PARTIDOS>.png -- por ejemplo
@@ -321,6 +353,124 @@ function renderTabla(datos) {
     "<tbody>" + (filas || '<tr><td colspan="3" class="centro">Todavía nadie se ha registrado.</td></tr>') + "</tbody>" +
     "</table>" +
     "</div>";
+}
+
+// ---------- pestaña "Quinielas" (capturas de todos, solo lectura) ----------
+//
+// Le enseña a cualquiera lo que registró cada participante en una jornada --
+// pero SOLO una vez que esa jornada ya cerró (ya se capturaron los 9
+// resultados reales). Antes de eso el backend regresa la lista vacía a
+// propósito, para que nadie pueda copiarle a nadie antes de mandar la suya.
+async function cargarQuinielas(jornadaParam) {
+  const cont = document.getElementById("contenido-quinielas");
+  cont.innerHTML = '<p class="centro">Cargando…</p>';
+  try {
+    let jornada = jornadaParam;
+    if (!jornada) {
+      const activa = await apiGet("activa");
+      if (!activa.ok) throw new Error(activa.error || "No se pudo leer la jornada activa.");
+      jornada = activa.jornada;
+    }
+    estadoQuinielas.jornada = jornada;
+
+    const datos = await apiGet("partidos", { jornada: jornada });
+    if (!datos.ok) {
+      cont.innerHTML = navJornadaQuinielasHtml(jornada) + '<div class="aviso info">' + escaparHtml(datos.error) + "</div>";
+      activarNavJornadaQuinielas();
+      return;
+    }
+    estadoQuinielas.jornada = datos.jornada;
+
+    if (!datos.cerrada) {
+      cont.innerHTML =
+        navJornadaQuinielasHtml(datos.jornada) +
+        '<div class="aviso info">Las capturas de todos se enseñan aquí hasta que esta jornada cierre (cuando ya estén los 9 resultados reales) — así nadie puede ver ni copiarle a nadie antes de mandar la suya.</div>';
+      activarNavJornadaQuinielas();
+      return;
+    }
+
+    const quinielas = await apiGet("quinielas", { jornada: datos.jornada });
+    if (!quinielas.ok) throw new Error(quinielas.error || "No se pudieron leer las quinielas.");
+    renderQuinielas(datos, quinielas.filas);
+  } catch (err) {
+    cont.innerHTML = '<div class="aviso error">Sin conexión con el Sheet ahorita.<br><small>' + escaparHtml(String(err.message || err)) + "</small></div>";
+  }
+}
+
+function navJornadaQuinielasHtml(jornada) {
+  return (
+    '<div class="jornada-nav">' +
+    '<button type="button" id="jornada-prev-quinielas" class="nav-flecha" aria-label="Jornada anterior">‹</button>' +
+    '<span class="chip">Jornada ' + jornada + "</span>" +
+    '<button type="button" id="jornada-next-quinielas" class="nav-flecha" aria-label="Jornada siguiente">›</button>' +
+    "</div>"
+  );
+}
+
+function activarNavJornadaQuinielas() {
+  document.getElementById("jornada-prev-quinielas").addEventListener("click", function () { cambiarJornadaQuinielas(-1); });
+  document.getElementById("jornada-next-quinielas").addEventListener("click", function () { cambiarJornadaQuinielas(1); });
+}
+
+function cambiarJornadaQuinielas(delta) {
+  const nueva = Math.min(17, Math.max(1, estadoQuinielas.jornada + delta));
+  if (nueva === estadoQuinielas.jornada) return;
+  cargarQuinielas(nueva);
+}
+
+// Cada participante se enseña como una tarjeta plegable (con <details>, sin
+// necesitar JS aparte para abrir/cerrar): el encabezado trae su nombre y
+// cuántos marcadores exactos acertó; al abrirla se ve partido por partido lo
+// que puso, comparado contra el resultado real (con 🎯 si le atinó exacto).
+function renderQuinielas(datos, filas) {
+  const cont = document.getElementById("contenido-quinielas");
+  const miNombre = (localStorage.getItem("quiniela_nombre") || "").trim().toLowerCase();
+
+  if (!filas.length) {
+    cont.innerHTML = navJornadaQuinielasHtml(datos.jornada) + '<p class="centro">Nadie registró su quiniela esta jornada.</p>';
+    activarNavJornadaQuinielas();
+    return;
+  }
+
+  const personas = filas.map(function (fila) {
+    let aciertos = 0;
+    const filasPartidos = datos.partidos.map(function (p, i) {
+      const m = fila.marcadores[i] || {};
+      const realL = p.local_goles === "" ? null : Number(p.local_goles);
+      const realV = p.visita_goles === "" ? null : Number(p.visita_goles);
+      const acerto = realL !== null && Number(m.local) === realL && Number(m.visita) === realV;
+      if (acerto) aciertos++;
+      return (
+        "<tr" + (acerto ? ' class="qp-acerto"' : "") + ">" +
+        '<td class="qp-partido">' + escaparHtml(p.local) + " vs " + escaparHtml(p.visita) + "</td>" +
+        '<td class="qp-pick">' + escaparHtml(m.local) + "-" + escaparHtml(m.visita) + "</td>" +
+        '<td class="qp-real">' + (realL !== null ? realL + "-" + realV : "—") + (acerto ? " 🎯" : "") + "</td>" +
+        "</tr>"
+      );
+    }).join("");
+    return { nombre: fila.nombre, aciertos: aciertos, filasPartidos: filasPartidos };
+  });
+
+  personas.sort(function (a, b) {
+    if (b.aciertos !== a.aciertos) return b.aciertos - a.aciertos;
+    return a.nombre.localeCompare(b.nombre, "es");
+  });
+
+  const tarjetas = personas.map(function (persona) {
+    const esYo = persona.nombre.trim().toLowerCase() === miNombre;
+    return (
+      '<details class="tarjeta quiniela-persona' + (esYo ? " fila-yo" : "") + '">' +
+      "<summary>" +
+      '<span class="qp-nombre">' + escaparHtml(persona.nombre) + (esYo ? ' <span class="chip-tu">tú</span>' : "") + "</span>" +
+      '<span class="qp-aciertos">' + persona.aciertos + "/9 🎯</span>" +
+      "</summary>" +
+      '<table class="qp-tabla">' + persona.filasPartidos + "</table>" +
+      "</details>"
+    );
+  }).join("");
+
+  cont.innerHTML = navJornadaQuinielasHtml(datos.jornada) + tarjetas;
+  activarNavJornadaQuinielas();
 }
 
 // ---------- pestaña "Resultados" (solo admin) ----------

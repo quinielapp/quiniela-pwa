@@ -1,5 +1,6 @@
 :root {
   --azul: #1F4E78;
+  --azul-claro: #8EC7FF;
   --azul-oscuro: #0B2340;
   --azul-noche: #050B16;
   --verde-cancha: #0E3B22;
@@ -9,6 +10,13 @@
   --verde: #1E7A34;
   --rojo: #B3261E;
   --texto: #1B1F24;
+  /* Superficies de tarjeta oscuras, para que armonicen con el fondo tipo
+     "cancha de noche" en vez de un blanco muy brillante y contrastante. */
+  --tarjeta-bg: #101B30;
+  --tarjeta-bg-2: #17233C;
+  --borde-sutil: rgba(255, 255, 255, 0.09);
+  --texto-claro: #E7EEF9;
+  --texto-tenue: #93A5C3;
 }
 
 * { box-sizing: border-box; }
@@ -64,10 +72,21 @@ header::after {
 
 header h1 {
   margin: 0 0 6px;
-  font-size: 1.4rem;
-  font-weight: 800;
-  letter-spacing: 0.2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-family: "Oswald", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
   text-shadow: 0 2px 10px rgba(0,0,0,0.35);
+}
+
+header h1 .h1-bola {
+  font-size: 1.15rem;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
 }
 
 header p {
@@ -124,11 +143,13 @@ main {
 .vista.activa { display: block; }
 
 .tarjeta {
-  background: #fff;
+  background: var(--tarjeta-bg);
+  color: var(--texto-claro);
+  border: 1px solid var(--borde-sutil);
   border-radius: 16px;
   padding: 16px;
   margin-bottom: 14px;
-  box-shadow: 0 8px 24px rgba(5, 11, 22, 0.28);
+  box-shadow: 0 8px 24px rgba(2, 6, 14, 0.45);
 }
 
 .aviso {
@@ -136,35 +157,40 @@ main {
   border-radius: 10px;
   font-size: 0.9rem;
   margin-bottom: 14px;
+  border: 1px solid transparent;
 }
 
-.aviso.info { background: #E8F0FA; color: var(--azul); }
-.aviso.error { background: #FBE9E7; color: var(--rojo); }
-.aviso.exito { background: #E6F4EA; color: var(--verde); }
+.aviso.info { background: rgba(31, 78, 120, 0.32); color: #BFE0FF; border-color: rgba(142, 199, 255, 0.25); }
+.aviso.error { background: rgba(179, 38, 30, 0.24); color: #FFB8B1; border-color: rgba(255, 128, 118, 0.28); }
+.aviso.exito { background: rgba(30, 122, 52, 0.24); color: #A6EBBB; border-color: rgba(120, 220, 150, 0.28); }
 
 label {
   display: block;
   font-size: 0.85rem;
   font-weight: 600;
   margin-bottom: 6px;
-  color: #444;
+  color: var(--texto-tenue);
 }
 
 input[type="text"] {
   width: 100%;
   padding: 12px;
   font-size: 1rem;
-  border: 1px solid #ccc;
+  color: var(--texto-claro);
+  background: var(--tarjeta-bg-2);
+  border: 1px solid var(--borde-sutil);
   border-radius: 8px;
   margin-bottom: 14px;
 }
+
+input[type="text"]::placeholder { color: #5F7396; }
 
 .partido {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 12px 0;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--borde-sutil);
   gap: 8px;
 }
 
@@ -190,6 +216,10 @@ input[type="text"] {
   width: 30px;
   height: 30px;
   object-fit: contain;
+  background: #fff;
+  border-radius: 50%;
+  padding: 3px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
 }
 
 .marcador {
@@ -201,7 +231,7 @@ input[type="text"] {
 .stepper {
   display: flex;
   align-items: center;
-  background: var(--gris-claro);
+  background: var(--tarjeta-bg-2);
   border-radius: 8px;
 }
 
@@ -212,7 +242,7 @@ input[type="text"] {
   background: none;
   font-size: 1.1rem;
   font-weight: bold;
-  color: var(--azul);
+  color: var(--azul-claro);
 }
 
 .stepper .valor {
@@ -224,7 +254,7 @@ input[type="text"] {
 
 .vs {
   font-size: 0.75rem;
-  color: #999;
+  color: var(--texto-tenue);
   font-weight: 700;
 }
 
@@ -234,10 +264,10 @@ input[type="text"] {
   text-align: center;
   font-size: 1.05rem;
   font-weight: 700;
-  color: var(--azul);
-  border: 1px solid #ccc;
+  color: var(--azul-claro);
+  border: 1px solid var(--borde-sutil);
   border-radius: 8px;
-  background: var(--gris-claro);
+  background: var(--tarjeta-bg-2);
   -moz-appearance: textfield; /* Firefox: sin flechitas de subir/bajar */
 }
 
@@ -250,13 +280,13 @@ input[type="text"] {
 }
 
 .input-resultado::placeholder {
-  color: #A9B9CC;
+  color: #5F7396;
   font-weight: 600;
   opacity: 1;
 }
 
 .marcador-fijo {
-  background: var(--gris-claro);
+  background: var(--tarjeta-bg-2);
   border-radius: 8px;
   padding: 6px 12px;
 }
@@ -267,7 +297,7 @@ input[type="text"] {
   text-align: center;
   font-size: 1.05rem;
   font-weight: 700;
-  color: var(--azul);
+  color: var(--azul-claro);
 }
 
 button.principal {
@@ -310,19 +340,19 @@ button.principal:disabled { background: #aaa; }
   flex-shrink: 0;
   border: none;
   border-radius: 50%;
-  background: var(--gris-claro);
-  color: var(--azul);
+  background: var(--tarjeta-bg-2);
+  color: var(--azul-claro);
   font-size: 1.25rem;
   font-weight: 800;
   line-height: 1;
 }
 
-.nav-flecha:active { background: #dbe6f0; }
+.nav-flecha:active { background: #223255; }
 
 .lista-nombres {
   font-size: 0.88rem;
   line-height: 1.6;
-  color: #444;
+  color: var(--texto-tenue);
 }
 
 .registrados-header {
@@ -334,7 +364,7 @@ button.principal:disabled { background: #aaa; }
 
 .registrados-titulo {
   font-weight: 700;
-  color: var(--azul);
+  color: var(--azul-claro);
   font-size: 0.92rem;
 }
 
@@ -355,8 +385,8 @@ button.principal:disabled { background: #aaa; }
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  background: var(--gris-claro);
-  color: var(--azul);
+  background: var(--tarjeta-bg-2);
+  color: var(--azul-claro);
   border-radius: 999px;
   padding: 5px 10px 5px 6px;
   font-size: 0.78rem;
@@ -385,7 +415,7 @@ table.tabla-general {
 table.tabla-general th, table.tabla-general td {
   padding: 8px 6px;
   text-align: center;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--borde-sutil);
   white-space: nowrap;
 }
 
@@ -398,9 +428,9 @@ table.tabla-general th:first-child, table.tabla-general td.celda-puesto {
   padding-right: 0;
 }
 
-table.tabla-general tr:nth-child(even) td { background: var(--gris-claro); }
+table.tabla-general tr:nth-child(even) td { background: rgba(255, 255, 255, 0.035); }
 
-table.tabla-general .total { font-weight: 800; color: var(--azul); }
+table.tabla-general .total { font-weight: 800; color: var(--azul-claro); }
 
 .badge-puesto {
   display: inline-flex;
@@ -409,8 +439,8 @@ table.tabla-general .total { font-weight: 800; color: var(--azul); }
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: #E4EAF2;
-  color: var(--azul);
+  background: var(--tarjeta-bg-2);
+  color: var(--azul-claro);
   font-weight: 800;
   font-size: 0.72rem;
 }
@@ -422,23 +452,23 @@ table.tabla-general .total { font-weight: 800; color: var(--azul); }
   height: auto;
 }
 
-tr.puesto-1 td { background: linear-gradient(90deg, rgba(232, 185, 35, 0.16), rgba(232, 185, 35, 0.04)); }
-tr.puesto-2 td { background: linear-gradient(90deg, rgba(160, 174, 192, 0.22), rgba(160, 174, 192, 0.05)); }
-tr.puesto-3 td { background: linear-gradient(90deg, rgba(184, 115, 51, 0.16), rgba(184, 115, 51, 0.04)); }
+tr.puesto-1 td { background: linear-gradient(90deg, rgba(232, 185, 35, 0.22), rgba(232, 185, 35, 0.05)); }
+tr.puesto-2 td { background: linear-gradient(90deg, rgba(180, 194, 212, 0.24), rgba(180, 194, 212, 0.05)); }
+tr.puesto-3 td { background: linear-gradient(90deg, rgba(205, 137, 70, 0.22), rgba(205, 137, 70, 0.05)); }
 
 tr.fila-yo td {
-  box-shadow: inset 3px 0 0 var(--azul);
+  box-shadow: inset 3px 0 0 var(--azul-claro);
 }
 
-tr.fila-yo td.celda-nombre { font-weight: 800; color: var(--azul); }
+tr.fila-yo td.celda-nombre { font-weight: 800; color: var(--azul-claro); }
 
 .chip-tu {
   display: inline-block;
   margin-left: 4px;
   padding: 1px 7px;
   border-radius: 999px;
-  background: var(--azul);
-  color: #fff;
+  background: var(--azul-claro);
+  color: #0B2340;
   font-size: 0.62rem;
   font-weight: 800;
   letter-spacing: 0.3px;
@@ -448,4 +478,77 @@ tr.fila-yo td.celda-nombre { font-weight: 800; color: var(--azul); }
 
 .tabla-scroll { overflow-x: auto; }
 
-.centro { text-align: center; padding: 24px 0; color: #888; font-size: 0.9rem; }
+.centro { text-align: center; padding: 24px 0; color: var(--texto-tenue); font-size: 0.9rem; }
+
+/* ---------- pestaña "Quinielas" (capturas de todos) ---------- */
+
+.quiniela-persona {
+  padding: 0;
+  overflow: hidden;
+}
+
+.quiniela-persona summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 16px;
+  font-weight: 700;
+  font-size: 0.92rem;
+}
+
+.quiniela-persona summary::-webkit-details-marker { display: none; }
+
+.quiniela-persona summary::after {
+  content: "▾";
+  margin-left: 4px;
+  color: var(--texto-tenue);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.quiniela-persona[open] summary::after { transform: rotate(180deg); }
+
+.quiniela-persona.fila-yo {
+  box-shadow: inset 3px 0 0 var(--azul-claro), 0 8px 24px rgba(2, 6, 14, 0.45);
+}
+
+.quiniela-persona.fila-yo .qp-nombre { color: var(--azul-claro); }
+
+.qp-nombre {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qp-aciertos {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--dorado-claro);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.qp-tabla {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  border-top: 1px solid var(--borde-sutil);
+}
+
+.qp-tabla td {
+  padding: 7px 16px;
+  border-bottom: 1px solid var(--borde-sutil);
+}
+
+.qp-tabla tr:last-child td { border-bottom: none; }
+
+.qp-partido { color: var(--texto-tenue); }
+.qp-pick { font-weight: 700; text-align: center; white-space: nowrap; }
+.qp-real { text-align: right; white-space: nowrap; color: var(--texto-tenue); }
+
+.qp-acerto { background: rgba(232, 185, 35, 0.08); }
+.qp-acerto .qp-pick, .qp-acerto .qp-real { color: var(--dorado-claro); font-weight: 800; }

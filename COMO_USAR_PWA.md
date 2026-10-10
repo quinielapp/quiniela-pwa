@@ -129,18 +129,19 @@ Android normalmente basta con cerrar la app y volver a abrirla.
   acumulado de toda la temporada — cada jornada tiene su propio cobro y su
   propia bolsa), con tu fila resaltada. El acumulado de toda la temporada
   sigue disponible en la pestaña `TABLA_GENERAL` de tu Sheet.
-- Cuando ya capturaste los resultados reales en `PARTIDOS` (columnas
-  GolesLocal/GolesVisita) de esa jornada, la app deja de aceptar envíos para
-  esa jornada y en vez del formulario muestra un aviso de que ya cerró — igual
-  que pasa hoy si alguien intenta contestar el Form tarde.
+- Tú decides, desde la pestaña **🔒 Admin**, cuándo se cierran las capturas
+  de una jornada (ver "Capturar resultados desde tu celular" más abajo) — ya
+  no se cierra sola nada más por capturar los 9 resultados reales. Eso sí,
+  como seguro extra, en cuanto los 9 resultados reales ya están capturados,
+  de todas formas se dejan de aceptar quinielas nuevas para esa jornada, para
+  que nadie pueda mandar una ya sabiendo cómo quedó.
 - Pestaña **Quinielas**: aquí cualquiera puede ver lo que registró CADA
   participante para una jornada (con flechitas para moverte entre jornadas
-  pasadas), comparado partido por partido contra el resultado real, con 🎯 en
-  los que le atinaron exacto y un contador de aciertos en el encabezado de
-  cada quien. A propósito, esto solo se ve una vez que esa jornada ya cerró
-  (ya están los 9 resultados reales) — mientras siga abierta, la pestaña
-  avisa que todavía no está disponible, para que nadie pueda copiarle a nadie
-  antes de mandar su propia quiniela.
+  pasadas), comparado partido por partido contra el resultado real (si ya se
+  sabe), con 🎯 en los que le atinaron exacto y un contador de aciertos en el
+  encabezado de cada quien. Esto solo se ve cuando TÚ lo habilitas desde la
+  pestaña Admin (ver más abajo) — mientras no lo actives, la pestaña avisa
+  que todavía no está disponible.
 
 ## Agregar los escudos de los equipos (opcional)
 
@@ -211,9 +212,20 @@ columnas de `PARTIDOS` (GolesLocal/GolesVisita) que llenarías tú a mano.
 - Escribe el marcador real en las casillas de cada partido conforme vayan
   terminando — puedes ir guardando poco a poco, no hace falta esperar a que
   se jueguen los 9. Deja en blanco los que todavía no acaban.
-- Dale **Guardar resultados**. En cuanto completes los 9 partidos de esa
-  jornada, se cierra sola para todos los participantes (ya no se aceptan más
-  quinielas), igual que si lo hubieras capturado desde la computadora.
+- Debajo de los partidos hay dos casillas que tú controlas para esa jornada:
+  - **Aceptar capturas de quiniela para esta jornada** — desmárcala cuando
+    quieras cerrar las capturas (por ejemplo, justo cuando arrancan los
+    partidos), sin tener que esperar a que termine nada. Como seguro extra,
+    aunque la dejes marcada, en cuanto ya tengas los 9 resultados reales
+    capturados de todas formas ya no se aceptan quinielas nuevas.
+  - **Mostrar las quinielas capturadas a todos** — márcala cuando quieras que
+    la pestaña "Quinielas" le enseñe a todos lo que registró cada quien
+    (normalmente justo después de cerrar las capturas, para que la gente
+    pueda especular mientras se juegan los partidos, sin que nadie haya
+    podido copiarle a nadie).
+- Dale **Guardar**. Esto guarda junto los resultados que hayas puesto Y esas
+  dos casillas. Puedes volver a entrar a la misma jornada las veces que
+  quieras para ir prendiendo/apagando lo que haga falta conforme avanza.
 
 Si alguien sin el PIN le da clic a **🔒 Admin** y escribe cualquier cosa, va
 a poder ver la pantalla de captura, pero en cuanto le dé "Guardar

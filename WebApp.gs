@@ -119,9 +119,90 @@ function apiPartidos(ss, jornadaParam) {
   if (faltanEquipos) {
     return { ok: false, error: "Faltan equipos por capturar en PARTIDOS para la Jornada " + jornada + "." };
   }
-  var cerrada = partidos.every(function (p) { return p.local_goles !== "" && p.visita_goles !== ""; });
+  var resultadosCompletos = partidos.every(function (p) { return p.local_goles !== "" && p.visita_goles !== ""; });
+  var control = obtenerControlJornada(ss, jornada);
+  // "capturasAbiertas" (lo que de verdad decide si se puede mandar una
+  // quiniela) combina el interruptor manual del admin con un seguro
+  // automático: aunque se le olvide cerrar las capturas a mano, en cuanto
+  // los 9 resultados reales ya están capturados, de todas formas ya no se
+  // aceptan quinielas nuevas -- nadie puede mandar una sabiendo el resultado.
+  var capturasAbiertas = control.capturasManual && !resultadosCompletos;
   var costo = ss.getSheetByName(HOJA_CONFIG).getRange("C5").getValue();
-  return { ok: true, jornada: jornada, cerrada: cerrada, costo: costo, partidos: partidos };
+  return {
+    ok: true,
+    jornada: jornada,
+    cerrada: !capturasAbiertas, // se mantiene por compatibilidad
+    resultadosCompletos: resultadosCompletos,
+    capturasManual: control.capturasManual,
+    capturasAbiertas: capturasAbiertas,
+    quinielasVisibles: control.quinielasVisibles,
+    costo: costo,
+    partidos: partidos
+  };
+}
+
+// ---------- CONTROL_JORNADAS: los dos interruptores manuales del admin ----------
+//
+// Antes, "¿se siguen aceptando capturas?" y "¿ya se pueden ver las quinielas
+// de todos?" se decidían solas, automáticamente, en cuanto capturabas los 9
+// resultados reales de los partidos. A petición tuya, ahora son DOS
+// interruptores independientes que tú prendes/apagas a mano desde la pestaña
+// Admin, sin importar si ya hay resultados reales o no -- así puedes, por
+// ejemplo, cerrar las capturas en cuanto arranca la jornada y enseñar las
+// quinielas de todos desde ese momento, para que la gente especule, aunque
+// los partidos todavía no se jueguen.
+//
+// Esto vive en su propia hoja, "CONTROL_JORNADAS" (una fila por jornada), que
+// esta función crea sola la primera vez que hace falta -- no tienes que
+// crear nada a mano en el Sheet.
+var HOJA_CONTROL = "CONTROL_JORNADAS";
+
+function obtenerHojaControl(ss) {
+  var sheet = ss.getSheetByName(HOJA_CONTROL);
+  if (!sheet) {
+    sheet = ss.insertSheet(HOJA_CONTROL);
+    sheet.getRange(1, 1, 1, 3).setValues([["Jornada", "CapturasAbiertas", "QuinielasVisibles"]]);
+    sheet.getRange(1, 1, 1, 3).setFontWeight("bold");
+  }
+  return sheet;
+}
+
+// Valores por default para una jornada que el admin todavía no ha tocado:
+// capturas abiertas (como siempre ha funcionado) y quinielas OCULTAS (para
+// no arriesgar nada hasta que decidas mostrarlas a propósito).
+function obtenerControlJornada(ss, jornada) {
+  var sheet = obtenerHojaControl(ss);
+  var lastRow = sheet.getLastRow();
+  if (lastRow >= 2) {
+    var data = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
+    for (var i = 0; i < data.length; i++) {
+      if (Number(data[i][0]) === jornada) {
+        return {
+          capturasManual: data[i][1] !== false,
+          quinielasVisibles: data[i][2] === true
+        };
+      }
+    }
+  }
+  return { capturasManual: true, quinielasVisibles: false };
+}
+
+function guardarControlJornada(ss, jornada, capturasAbiertas, quinielasVisibles) {
+  var sheet = obtenerHojaControl(ss);
+  var lastRow = sheet.getLastRow();
+  var fila = null;
+  if (lastRow >= 2) {
+    var data = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (var i = 0; i < data.length; i++) {
+      if (Number(data[i][0]) === jornada) { fila = i + 2; break; }
+    }
+  }
+  if (!fila) {
+    fila = sheet.getLastRow() + 1;
+    sheet.getRange(fila, 1).setValue(jornada);
+  }
+  sheet.getRange(fila, 2).setValue(!!capturasAbiertas);
+  sheet.getRange(fila, 3).setValue(!!quinielasVisibles);
 }
 
 function getPartidosConResultado(ss, jornada) {
@@ -222,24 +303,22 @@ function apiMiQuiniela(ss, nombreParam, jornadaParam) {
 }
 
 // Devuelve la quiniela de TODOS los que se registraron en una jornada --
-// solo cuando esa jornada ya cerró (los 9 resultados reales ya están
-// capturados en PARTIDOS). Mientras siga abierta se regresa vacío a propósito
-// (aunque alguien llame el endpoint directo), para que nadie pueda ver ni
-// copiar lo que puso otro antes de mandar la suya -- eso sería tan trampa
-// como poder editar tu propia quiniela después de enviarla.
+// solo cuando TÚ prendiste el interruptor "mostrar las quinielas" para esa
+// jornada desde la pestaña Admin (ver CONTROL_JORNADAS arriba). Mientras ese
+// interruptor siga apagado se regresa vacío a propósito (aunque alguien
+// llame el endpoint directo), así que esto es decisión tuya, no automática.
 function apiQuinielasJornada(ss, jornadaParam) {
   var jornada = Number(jornadaParam);
   if (!jornada) return { ok: false, error: "Falta la jornada." };
 
-  var partidos = getPartidosConResultado(ss, jornada);
-  var cerrada = partidos.length === 9 && partidos.every(function (p) { return p.local_goles !== "" && p.visita_goles !== ""; });
-  if (!cerrada) {
-    return { ok: true, jornada: jornada, cerrada: false, filas: [] };
+  var control = obtenerControlJornada(ss, jornada);
+  if (!control.quinielasVisibles) {
+    return { ok: true, jornada: jornada, quinielasVisibles: false, filas: [] };
   }
 
   var sheet = ss.getSheetByName(HOJA_RESPUESTAS);
   var lastRow = sheet.getLastRow();
-  if (lastRow < PRIMERA_FILA_RESPUESTAS) return { ok: true, jornada: jornada, cerrada: true, filas: [] };
+  if (lastRow < PRIMERA_FILA_RESPUESTAS) return { ok: true, jornada: jornada, quinielasVisibles: true, filas: [] };
 
   var data = sheet.getRange(PRIMERA_FILA_RESPUESTAS, 4, lastRow - PRIMERA_FILA_RESPUESTAS + 1, 20).getValues(); // D:W
   var filas = [];
@@ -254,7 +333,7 @@ function apiQuinielasJornada(ss, jornadaParam) {
     }
     filas.push({ nombre: nombre, marcadores: marcadores });
   }
-  return { ok: true, jornada: jornada, cerrada: true, filas: filas };
+  return { ok: true, jornada: jornada, quinielasVisibles: true, filas: filas };
 }
 
 // Le permite SOLO al admin (dueño del PIN) capturar el resultado real de los
@@ -293,10 +372,23 @@ function apiGuardarResultados(ss, body) {
     sheet.getRange(fila, 6, 1, 2).setValues([[lg, vg]]); // F=GolesLocal, G=GolesVisita
   }
 
-  var partidosActualizados = getPartidosConResultado(ss, jornada);
-  var cerrada = partidosActualizados.length === 9 && partidosActualizados.every(function (p) { return p.local_goles !== "" && p.visita_goles !== ""; });
+  // Guarda también los dos interruptores manuales de esta jornada (vienen
+  // del checkbox de la pestaña Admin, junto con los resultados).
+  guardarControlJornada(ss, jornada, body.capturasAbiertas, body.quinielasVisibles);
 
-  return { ok: true, mensaje: "Resultados guardados en el Sheet.", cerrada: cerrada };
+  var partidosActualizados = getPartidosConResultado(ss, jornada);
+  var resultadosCompletos = partidosActualizados.length === 9 && partidosActualizados.every(function (p) { return p.local_goles !== "" && p.visita_goles !== ""; });
+  var control = obtenerControlJornada(ss, jornada);
+  var capturasAbiertas = control.capturasManual && !resultadosCompletos;
+
+  return {
+    ok: true,
+    mensaje: "Resultados guardados en el Sheet.",
+    cerrada: !capturasAbiertas, // compatibilidad
+    resultadosCompletos: resultadosCompletos,
+    capturasAbiertas: capturasAbiertas,
+    quinielasVisibles: control.quinielasVisibles
+  };
 }
 
 function apiSubmit(ss, body) {
@@ -310,8 +402,10 @@ function apiSubmit(ss, body) {
 
   var partidos = getPartidosConResultado(ss, jornada);
   if (partidos.length !== 9) return { ok: false, error: "Esa jornada no tiene los 9 partidos cargados todavía." };
-  var cerrada = partidos.every(function (p) { return p.local_goles !== "" && p.visita_goles !== ""; });
-  if (cerrada) return { ok: false, error: "Esta jornada ya cerró (ya se capturaron los resultados reales). Contacta al admin si necesitas corregir algo." };
+  var resultadosCompletos = partidos.every(function (p) { return p.local_goles !== "" && p.visita_goles !== ""; });
+  var control = obtenerControlJornada(ss, jornada);
+  var capturasAbiertas = control.capturasManual && !resultadosCompletos;
+  if (!capturasAbiertas) return { ok: false, error: "Ya no se aceptan capturas para esta jornada. Contacta al admin si necesitas corregir algo." };
 
   var scores = [];
   for (var i = 0; i < 9; i++) {

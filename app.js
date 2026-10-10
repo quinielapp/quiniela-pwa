@@ -166,10 +166,15 @@ function cambiarJornadaMostrada(delta) {
 function renderPartidos(datos, miQuiniela) {
   const cont = document.getElementById("contenido-capturar");
   const yaRegistrada = !!miQuiniela;
-  const cerrada = datos.cerrada;
+  // "cerrada" aquí significa "ya no se aceptan capturas" -- puede ser porque
+  // tú lo cerraste a mano desde Admin, o porque ya se capturaron los 9
+  // resultados reales (ese seguro automático sigue existiendo pase lo que
+  // pase con el interruptor manual).
+  const cerrada = !datos.capturasAbiertas;
   // Si la jornada ya cerró y esta persona nunca registró su quiniela, ya no
   // tiene caso enseñarle un formulario vacío (ya no se puede mandar) -- mejor
-  // se le enseña de una vez el resultado real de cada partido, de solo lectura.
+  // se le enseña de una vez el resultado real de cada partido (si ya se sabe),
+  // de solo lectura.
   const sinCapturaYCerrada = cerrada && !yaRegistrada;
   const bloques = datos.partidos.map(function (p, i) {
     let marcadorHtml;
@@ -197,11 +202,12 @@ function renderPartidos(datos, miQuiniela) {
     );
   }).join("");
 
+  const detalleCierre = datos.resultadosCompletos ? " (ya se capturaron los resultados reales)" : "";
   let aviso = "";
   if (cerrada && yaRegistrada) {
-    aviso = '<div class="aviso info">Esta jornada ya cerró (ya se capturaron los resultados reales). Aquí abajo está lo que registraste.</div>';
+    aviso = '<div class="aviso info">Ya no se aceptan capturas para esta jornada' + detalleCierre + '. Aquí abajo está lo que registraste.</div>';
   } else if (sinCapturaYCerrada) {
-    aviso = '<div class="aviso info">Esta jornada ya cerró y no alcanzaste a registrar tu quiniela. Aquí abajo puedes ver cómo quedaron los resultados reales.</div>';
+    aviso = '<div class="aviso info">Ya no se aceptan capturas para esta jornada' + detalleCierre + ' y no alcanzaste a registrar la tuya. Aquí abajo puedes ver cómo van los resultados.</div>';
   } else if (yaRegistrada) {
     aviso = '<div class="aviso exito">Ya enviaste tu quiniela para esta jornada ⚽ Aquí abajo está lo que registraste — ya no se puede cambiar. Si te equivocaste, pídele al admin que lo corrija directo en el Sheet.</div>';
   }
@@ -358,9 +364,12 @@ function renderTabla(datos) {
 // ---------- pestaña "Quinielas" (capturas de todos, solo lectura) ----------
 //
 // Le enseña a cualquiera lo que registró cada participante en una jornada --
-// pero SOLO una vez que esa jornada ya cerró (ya se capturaron los 9
-// resultados reales). Antes de eso el backend regresa la lista vacía a
-// propósito, para que nadie pueda copiarle a nadie antes de mandar la suya.
+// pero SOLO cuando tú prendiste el interruptor "Mostrar las quinielas
+// capturadas a todos" para esa jornada, desde la pestaña Admin. Es decisión
+// tuya, no depende de si la jornada ya cerró ni de si ya hay resultados
+// reales -- puedes mostrarlas desde que arranca la jornada, para que la
+// gente especule. Antes de que lo prendas, el backend regresa la lista vacía
+// a propósito (aunque alguien llame el endpoint directo).
 async function cargarQuinielas(jornadaParam) {
   const cont = document.getElementById("contenido-quinielas");
   cont.innerHTML = '<p class="centro">Cargando…</p>';
@@ -381,10 +390,10 @@ async function cargarQuinielas(jornadaParam) {
     }
     estadoQuinielas.jornada = datos.jornada;
 
-    if (!datos.cerrada) {
+    if (!datos.quinielasVisibles) {
       cont.innerHTML =
         navJornadaQuinielasHtml(datos.jornada) +
-        '<div class="aviso info">Las capturas de todos se enseñan aquí hasta que esta jornada cierre (cuando ya estén los 9 resultados reales) — así nadie puede ver ni copiarle a nadie antes de mandar la suya.</div>';
+        '<div class="aviso info">El admin todavía no habilita ver las quinielas de todos para esta jornada.</div>';
       activarNavJornadaQuinielas();
       return;
     }
@@ -576,13 +585,22 @@ function renderResultadosAdmin(datos) {
     );
   }).join("");
 
+  const notaResultados = datos.resultadosCompletos
+    ? '<p class="nota-control">Ya están los 9 resultados reales de esta jornada, así que de cualquier forma ya no se aceptan capturas nuevas, aunque dejes marcada la primera casilla.</p>'
+    : "";
+
   cont.innerHTML =
     '<div class="tarjeta">' +
     navJornadaAdminHtml(datos.jornada) +
-    '<div class="aviso info">Deja un partido en blanco si todavía no termina. En cuanto completes los 9, esa jornada cierra sola para todos (ya no se aceptan más quinielas).</div>' +
+    '<div class="aviso info">Deja un partido en blanco si todavía no termina.</div>' +
     '<div id="lista-resultados">' + filas + "</div>" +
+    '<div class="control-jornada">' +
+    '<label class="chk-control"><input type="checkbox" id="chk-capturas-abiertas"' + (datos.capturasManual ? " checked" : "") + '><span>Aceptar capturas de quiniela para esta jornada</span></label>' +
+    '<label class="chk-control"><input type="checkbox" id="chk-quinielas-visibles"' + (datos.quinielasVisibles ? " checked" : "") + '><span>Mostrar las quinielas capturadas a todos (pestaña "Quinielas")</span></label>' +
+    notaResultados +
+    "</div>" +
     '<div id="mensaje-resultados"></div>' +
-    '<button type="button" id="btn-guardar-resultados" class="principal">Guardar resultados</button>' +
+    '<button type="button" id="btn-guardar-resultados" class="principal">Guardar</button>' +
     "</div>";
 
   activarNavJornadaAdmin();
@@ -600,6 +618,9 @@ async function guardarResultadosAdmin() {
     return { num: num, local_goles: local, visita_goles: visita };
   });
 
+  const capturasAbiertas = document.getElementById("chk-capturas-abiertas").checked;
+  const quinielasVisibles = document.getElementById("chk-quinielas-visibles").checked;
+
   boton.disabled = true;
   boton.textContent = "Guardando…";
   msg.innerHTML = "";
@@ -610,9 +631,11 @@ async function guardarResultadosAdmin() {
       pin: localStorage.getItem("quiniela_admin_pin") || "",
       jornada: estadoAdmin.jornada,
       resultados: resultados,
+      capturasAbiertas: capturasAbiertas,
+      quinielasVisibles: quinielasVisibles,
     });
     if (resp.ok) {
-      const avisoCierre = resp.cerrada ? " La jornada quedó cerrada -- ya no se aceptan más quinielas." : "";
+      const avisoCierre = !resp.capturasAbiertas ? " Ya no se aceptan capturas para esta jornada." : "";
       msg.innerHTML = '<div class="aviso exito">' + escaparHtml(resp.mensaje + avisoCierre) + "</div>";
     } else {
       const esPinMalo = String(resp.error || "").indexOf("PIN") !== -1;

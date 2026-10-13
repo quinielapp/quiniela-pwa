@@ -117,6 +117,7 @@ async function cargarJornada(jornada) {
     // formulario vacío se le muestra lo que ya registró (de solo lectura) --
     // así puede consultarlo sin tener que pedírtelo a ti.
     let miQuiniela = null;
+    let miEstado = null;
     const nombreGuardado = (localStorage.getItem("quiniela_nombre") || "").trim();
     // OJO: esto se pide SIEMPRE que haya un nombre guardado, sin importar si
     // la jornada ya cerró o no -- antes solo se pedía cuando seguía abierta,
@@ -126,13 +127,16 @@ async function cargarJornada(jornada) {
     if (nombreGuardado) {
       try {
         const mia = await apiGet("miquiniela", { nombre: nombreGuardado, jornada: datos.jornada });
-        if (mia.ok && mia.registrada) miQuiniela = mia.marcadores;
+        if (mia.ok && mia.registrada) {
+          miQuiniela = mia.marcadores;
+          miEstado = mia.estado;
+        }
       } catch (err) {
         // si falla esta consulta extra, no pasa nada -- se muestra el formulario normal
       }
     }
 
-    renderPartidos(datos, miQuiniela);
+    renderPartidos(datos, miQuiniela, miEstado);
     cargarRegistros(datos.jornada);
   } catch (err) {
     cont.innerHTML = '<div class="aviso error">Sin conexión con el Sheet ahorita.<br><small>' + escaparHtml(String(err.message || err)) + "</small></div>";
@@ -163,7 +167,7 @@ function cambiarJornadaMostrada(delta) {
 // miQuiniela: null si todavía puede capturar, o un arreglo [{local,visita}, ...]
 // (uno por partido, en el mismo orden que datos.partidos) si ya la registró
 // -- en ese caso se muestra de solo lectura, ya no editable.
-function renderPartidos(datos, miQuiniela) {
+function renderPartidos(datos, miQuiniela, miEstado) {
   const cont = document.getElementById("contenido-capturar");
   const yaRegistrada = !!miQuiniela;
   // "cerrada" aquí significa "ya no se aceptan capturas" -- puede ser porque
@@ -203,13 +207,28 @@ function renderPartidos(datos, miQuiniela) {
   }).join("");
 
   const detalleCierre = datos.resultadosCompletos ? " (ya se capturaron los resultados reales)" : "";
+  // El admin ahora aprueba cada quiniela a mano -- se lo hacemos saber a la
+  // persona para que no se quede con la duda de por qué no sale en la tabla.
+  let notaEstado = "";
+  let claseEstado = "exito";
+  if (miEstado === "aprobada") {
+    notaEstado = " Tu quiniela ya fue aprobada por el admin.";
+    claseEstado = "exito";
+  } else if (miEstado === "rechazada") {
+    notaEstado = " Tu quiniela fue rechazada por el admin -- contáctalo si crees que es un error.";
+    claseEstado = "error";
+  } else if (yaRegistrada) {
+    notaEstado = " Está pendiente de aprobación del admin.";
+    claseEstado = "info";
+  }
+
   let aviso = "";
   if (cerrada && yaRegistrada) {
-    aviso = '<div class="aviso info">Ya no se aceptan capturas para esta jornada' + detalleCierre + '. Aquí abajo está lo que registraste.</div>';
+    aviso = '<div class="aviso ' + claseEstado + '">Ya no se aceptan capturas para esta jornada' + detalleCierre + '. Aquí abajo está lo que registraste.' + notaEstado + "</div>";
   } else if (sinCapturaYCerrada) {
     aviso = '<div class="aviso info">Ya no se aceptan capturas para esta jornada' + detalleCierre + ' y no alcanzaste a registrar la tuya. Aquí abajo puedes ver cómo van los resultados.</div>';
   } else if (yaRegistrada) {
-    aviso = '<div class="aviso exito">Ya enviaste tu quiniela para esta jornada ⚽ Aquí abajo está lo que registraste — ya no se puede cambiar. Si te equivocaste, pídele al admin que lo corrija directo en el Sheet.</div>';
+    aviso = '<div class="aviso ' + claseEstado + '">Ya enviaste tu quiniela para esta jornada ⚽ Aquí abajo está lo que registraste — ya no se puede cambiar.' + notaEstado + ' Si te equivocaste, pídele al admin que lo corrija directo en el Sheet.</div>';
   }
 
   cont.innerHTML =
@@ -305,7 +324,8 @@ async function enviarQuiniela(ev) {
       msg.innerHTML = '<div class="aviso exito">' + escaparHtml(resp.mensaje) + "</div>";
       // Muestra de inmediato lo que se acaba de mandar, de solo lectura --
       // así el participante ve confirmado exactamente lo que quedó guardado.
-      renderPartidos({ jornada: estado.jornada, cerrada: false, partidos: estado.partidos }, estado.marcadores);
+      // Toda quiniela recién mandada empieza "pendiente" de aprobación.
+      renderPartidos({ jornada: estado.jornada, capturasAbiertas: true, partidos: estado.partidos }, estado.marcadores, "pendiente");
       cargarRegistros(estado.jornada);
     } else {
       msg.innerHTML = '<div class="aviso error">' + escaparHtml(resp.error) + "</div>";
@@ -431,47 +451,77 @@ function cambiarJornadaQuinielas(delta) {
 // necesitar JS aparte para abrir/cerrar): el encabezado trae su nombre y
 // cuántos marcadores exactos acertó; al abrirla se ve partido por partido lo
 // que puso, comparado contra el resultado real (con 🎯 si le atinó exacto).
+// "L" (ganó el local), "V" (ganó el visitante) o "E" (empate) -- se usa para
+// saber si alguien le atinó al RESULTADO aunque no al marcador exacto.
+function resultadoDe(local, visita) {
+  local = Number(local);
+  visita = Number(visita);
+  if (local > visita) return "L";
+  if (visita > local) return "V";
+  return "E";
+}
+
 function renderQuinielas(datos, filas) {
   const cont = document.getElementById("contenido-quinielas");
   const miNombre = (localStorage.getItem("quiniela_nombre") || "").trim().toLowerCase();
 
   if (!filas.length) {
-    cont.innerHTML = navJornadaQuinielasHtml(datos.jornada) + '<p class="centro">Nadie registró su quiniela esta jornada.</p>';
+    cont.innerHTML = navJornadaQuinielasHtml(datos.jornada) + '<p class="centro">Todavía no hay quinielas aprobadas para mostrar en esta jornada.</p>';
     activarNavJornadaQuinielas();
     return;
   }
 
   const personas = filas.map(function (fila) {
-    let aciertos = 0;
     const filasPartidos = datos.partidos.map(function (p, i) {
       const m = fila.marcadores[i] || {};
       const realL = p.local_goles === "" ? null : Number(p.local_goles);
       const realV = p.visita_goles === "" ? null : Number(p.visita_goles);
-      const acerto = realL !== null && Number(m.local) === realL && Number(m.visita) === realV;
-      if (acerto) aciertos++;
+      // Verde = acertó el marcador exacto. Amarillo/naranja = acertó quién
+      // ganaba (o el empate) pero no el marcador. Rojo = ni eso. Sin color =
+      // ese partido todavía no tiene resultado real, no se puede juzgar.
+      let clase = "";
+      let real = "—";
+      if (realL !== null) {
+        real = realL + "-" + realV;
+        const exacto = Number(m.local) === realL && Number(m.visita) === realV;
+        if (exacto) {
+          clase = "qp-exacto";
+          real += " 🎯";
+        } else if (resultadoDe(m.local, m.visita) === resultadoDe(realL, realV)) {
+          clase = "qp-resultado";
+        } else {
+          clase = "qp-fallo";
+        }
+      }
       return (
-        "<tr" + (acerto ? ' class="qp-acerto"' : "") + ">" +
+        "<tr" + (clase ? ' class="' + clase + '"' : "") + ">" +
         '<td class="qp-partido">' + escaparHtml(p.local) + " vs " + escaparHtml(p.visita) + "</td>" +
         '<td class="qp-pick">' + escaparHtml(m.local) + "-" + escaparHtml(m.visita) + "</td>" +
-        '<td class="qp-real">' + (realL !== null ? realL + "-" + realV : "—") + (acerto ? " 🎯" : "") + "</td>" +
+        '<td class="qp-real">' + real + "</td>" +
         "</tr>"
       );
     }).join("");
-    return { nombre: fila.nombre, aciertos: aciertos, filasPartidos: filasPartidos };
+    return { nombre: fila.nombre, puntos: fila.puntos, filasPartidos: filasPartidos };
   });
 
+  // El orden y los puntos que se muestran son los MISMOS que ya calcula tu
+  // Sheet para la Tabla general (columna AG de RESPUESTAS) -- no se inventa
+  // ningún número nuevo aquí, para que nunca haya dos cuentas distintas.
   personas.sort(function (a, b) {
-    if (b.aciertos !== a.aciertos) return b.aciertos - a.aciertos;
+    const pa = a.puntos == null ? -1 : a.puntos;
+    const pb = b.puntos == null ? -1 : b.puntos;
+    if (pb !== pa) return pb - pa;
     return a.nombre.localeCompare(b.nombre, "es");
   });
 
   const tarjetas = personas.map(function (persona) {
     const esYo = persona.nombre.trim().toLowerCase() === miNombre;
+    const puntosTexto = persona.puntos == null ? "— pts" : persona.puntos + " pts";
     return (
       '<details class="tarjeta quiniela-persona' + (esYo ? " fila-yo" : "") + '">' +
       "<summary>" +
       '<span class="qp-nombre">' + escaparHtml(persona.nombre) + (esYo ? ' <span class="chip-tu">tú</span>' : "") + "</span>" +
-      '<span class="qp-aciertos">' + persona.aciertos + "/9 🎯</span>" +
+      '<span class="qp-puntos">' + puntosTexto + "</span>" +
       "</summary>" +
       '<table class="qp-tabla">' + persona.filasPartidos + "</table>" +
       "</details>"
@@ -594,6 +644,12 @@ function renderResultadosAdmin(datos) {
     navJornadaAdminHtml(datos.jornada) +
     '<div class="aviso info">Deja un partido en blanco si todavía no termina.</div>' +
     '<div id="lista-resultados">' + filas + "</div>" +
+    '<div class="seccion-admin">' +
+    '<h3 class="titulo-seccion-admin">Participantes — Jornada ' + datos.jornada + "</h3>" +
+    '<p class="nota-control">Solo cuentan en la Tabla general y se ven en la pestaña Quinielas los que marques como "Aprobada". Aprueba a quien ya pagó o quieres que participe; rechaza al resto (aunque tengan el link).</p>' +
+    '<div id="lista-participantes-admin"><p class="centro">Cargando participantes…</p></div>' +
+    '<div id="mensaje-participantes-admin"></div>' +
+    "</div>" +
     '<div class="control-jornada">' +
     '<label class="chk-control"><input type="checkbox" id="chk-capturas-abiertas"' + (datos.capturasManual ? " checked" : "") + '><span>Aceptar capturas de quiniela para esta jornada</span></label>' +
     '<label class="chk-control"><input type="checkbox" id="chk-quinielas-visibles"' + (datos.quinielasVisibles ? " checked" : "") + '><span>Mostrar las quinielas capturadas a todos (pestaña "Quinielas")</span></label>' +
@@ -605,7 +661,79 @@ function renderResultadosAdmin(datos) {
 
   activarNavJornadaAdmin();
   document.getElementById("btn-guardar-resultados").addEventListener("click", guardarResultadosAdmin);
+  cargarParticipantesAdmin(datos.jornada);
 }
+
+// Lista de quién se registró en esta jornada, con un selector de estado
+// (Pendiente / Aprobada / Rechazada) por persona. Cada cambio se guarda de
+// inmediato -- no hace falta darle al botón "Guardar" de hasta abajo para
+// esto (ese es solo para los resultados y las dos casillas de arriba).
+async function cargarParticipantesAdmin(jornada) {
+  const cont = document.getElementById("lista-participantes-admin");
+  if (!cont) return;
+  try {
+    const datos = await apiGet("participantesJornada", { jornada: jornada });
+    if (!datos.ok) {
+      cont.innerHTML = '<p class="centro">No se pudo cargar la lista de participantes.</p>';
+      return;
+    }
+    renderParticipantesAdmin(datos.participantes, jornada);
+  } catch (err) {
+    cont.innerHTML = '<p class="centro">Sin conexión con el Sheet ahorita.</p>';
+  }
+}
+
+function renderParticipantesAdmin(participantes, jornada) {
+  const cont = document.getElementById("lista-participantes-admin");
+  if (!participantes.length) {
+    cont.innerHTML = '<p class="centro">Nadie se ha registrado todavía esta jornada.</p>';
+    return;
+  }
+
+  const etiquetas = { pendiente: "Pendiente", aprobada: "Aprobada", rechazada: "Rechazada" };
+  cont.innerHTML = participantes.map(function (p) {
+    return (
+      '<div class="participante-admin estado-' + p.estado + '" data-nombre="' + escaparHtml(p.nombre) + '">' +
+      '<span class="pa-nombre">' + escaparHtml(p.nombre) + "</span>" +
+      '<select class="pa-estado">' +
+      ESTADOS_APROBACION_FRONT.map(function (e) {
+        return '<option value="' + e + '"' + (e === p.estado ? " selected" : "") + ">" + etiquetas[e] + "</option>";
+      }).join("") +
+      "</select>" +
+      "</div>"
+    );
+  }).join("");
+
+  cont.querySelectorAll(".pa-estado").forEach(function (select) {
+    select.addEventListener("change", function () {
+      const fila = select.closest(".participante-admin");
+      const nombre = fila.dataset.nombre;
+      const estado = select.value;
+      const msg = document.getElementById("mensaje-participantes-admin");
+      select.disabled = true;
+      apiPost({
+        action: "actualizarAprobacion",
+        pin: localStorage.getItem("quiniela_admin_pin") || "",
+        jornada: jornada,
+        nombre: nombre,
+        estado: estado,
+      }).then(function (resp) {
+        if (resp.ok) {
+          fila.className = "participante-admin estado-" + estado;
+          msg.innerHTML = "";
+        } else {
+          msg.innerHTML = '<div class="aviso error">' + escaparHtml(resp.error || "No se pudo actualizar.") + "</div>";
+        }
+      }).catch(function () {
+        msg.innerHTML = '<div class="aviso error">No se pudo guardar (revisa tu conexión) e intenta de nuevo.</div>';
+      }).finally(function () {
+        select.disabled = false;
+      });
+    });
+  });
+}
+
+var ESTADOS_APROBACION_FRONT = ["pendiente", "aprobada", "rechazada"];
 
 async function guardarResultadosAdmin() {
   const msg = document.getElementById("mensaje-resultados");

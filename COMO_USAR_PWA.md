@@ -135,13 +135,23 @@ Android normalmente basta con cerrar la app y volver a abrirla.
   como seguro extra, en cuanto los 9 resultados reales ya están capturados,
   de todas formas se dejan de aceptar quinielas nuevas para esa jornada, para
   que nadie pueda mandar una ya sabiendo cómo quedó.
-- Pestaña **Quinielas**: aquí cualquiera puede ver lo que registró CADA
-  participante para una jornada (con flechitas para moverte entre jornadas
-  pasadas), comparado partido por partido contra el resultado real (si ya se
-  sabe), con 🎯 en los que le atinaron exacto y un contador de aciertos en el
-  encabezado de cada quien. Esto solo se ve cuando TÚ lo habilitas desde la
-  pestaña Admin (ver más abajo) — mientras no lo actives, la pestaña avisa
-  que todavía no está disponible.
+- Pestaña **Quinielas**: aquí cualquiera puede ver lo que registró cada
+  participante YA APROBADO para una jornada (con flechitas para moverte
+  entre jornadas pasadas), comparado partido por partido contra el resultado
+  real (si ya se sabe): verde si le atinó al marcador exacto, amarillo si
+  nada más adivinó quién ganaba (o el empate) sin el marcador exacto, y rojo
+  si no le atinó a nada. Arriba de cada quien sale su total de puntos — el
+  mismo que ya calcula tu Sheet, no es un número aparte. Esto solo se ve
+  cuando TÚ lo habilitas desde la pestaña Admin (ver más abajo), Y nada más
+  para quien ya hayas aprobado (ver el siguiente punto) — mientras no lo
+  actives, la pestaña avisa que todavía no está disponible.
+- **Aprobar participantes**: cada quiniela que alguien manda queda
+  "Pendiente" hasta que TÚ la apruebes o la rechaces a mano, uno por uno,
+  desde la pestaña **🔒 Admin** (ver más abajo). Solo cuentan en la Tabla
+  general y se ven en la pestaña Quinielas los que marques como "Aprobada"
+  — así puedes filtrar a quien no haya pagado o no quieras que participe,
+  aunque siga teniendo el link y pueda seguir mandando su quiniela cada
+  semana.
 
 ## Agregar los escudos de los equipos (opcional)
 
@@ -212,7 +222,18 @@ columnas de `PARTIDOS` (GolesLocal/GolesVisita) que llenarías tú a mano.
 - Escribe el marcador real en las casillas de cada partido conforme vayan
   terminando — puedes ir guardando poco a poco, no hace falta esperar a que
   se jueguen los 9. Deja en blanco los que todavía no acaban.
-- Debajo de los partidos hay dos casillas que tú controlas para esa jornada:
+- Debajo de los partidos hay una lista **"Participantes — Jornada N"** con
+  todos los que se han registrado esa semana. Cada quien tiene un menú con
+  tres opciones: **Pendiente** (así empiezan todos, no cuenta todavía),
+  **Aprobada** (cuenta en la Tabla general y se ve en "Quinielas") y
+  **Rechazada** (no cuenta ni se ve, aunque la persona siga teniendo el
+  link y mande su quiniela otra vez la próxima semana). Cambiar el menú
+  guarda al instante — no hace falta darle a "Guardar" para esto.
+  **Importante la primera vez que uses esto**: nadie cuenta como "Aprobada"
+  hasta que tú lo marques, así que si ya había gente registrada antes de
+  subir esta actualización, la Tabla general y "Quinielas" se van a ver
+  vacías para la jornada en curso hasta que entres y apruebes a cada quien.
+- Debajo de eso hay dos casillas que tú controlas para esa jornada:
   - **Aceptar capturas de quiniela para esta jornada** — desmárcala cuando
     quieras cerrar las capturas (por ejemplo, justo cuando arrancan los
     partidos), sin tener que esperar a que termine nada. Como seguro extra,

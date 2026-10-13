@@ -524,7 +524,7 @@ tr.fila-yo td.celda-nombre { font-weight: 800; color: var(--azul-claro); }
   white-space: nowrap;
 }
 
-.qp-aciertos {
+.qp-puntos {
   font-size: 0.78rem;
   font-weight: 800;
   color: var(--dorado-claro);
@@ -550,10 +550,65 @@ tr.fila-yo td.celda-nombre { font-weight: 800; color: var(--azul-claro); }
 .qp-pick { font-weight: 700; text-align: center; white-space: nowrap; }
 .qp-real { text-align: right; white-space: nowrap; color: var(--texto-tenue); }
 
-.qp-acerto { background: rgba(232, 185, 35, 0.08); }
-.qp-acerto .qp-pick, .qp-acerto .qp-real { color: var(--dorado-claro); font-weight: 800; }
+/* Verde = acertó el marcador exacto. Amarillo/naranja = acertó el
+   resultado (quién ganaba, o el empate) pero no el marcador exacto.
+   Rojo = no acertó ni el resultado. Sin clase = todavía no hay resultado
+   real para ese partido, no se puede juzgar. */
+.qp-exacto { background: rgba(46, 204, 113, 0.14); }
+.qp-exacto .qp-pick, .qp-exacto .qp-real { color: #7CE8A4; font-weight: 800; }
 
-/* ---------- interruptores manuales en la pestaña Admin ---------- */
+.qp-resultado { background: rgba(243, 156, 18, 0.14); }
+.qp-resultado .qp-pick, .qp-resultado .qp-real { color: #FFC266; font-weight: 800; }
+
+.qp-fallo { background: rgba(211, 47, 47, 0.12); }
+.qp-fallo .qp-pick, .qp-fallo .qp-real { color: #FF9B93; font-weight: 700; }
+
+/* ---------- interruptores manuales y aprobaciones en la pestaña Admin ---------- */
+
+.seccion-admin {
+  margin: 14px 0;
+}
+
+.titulo-seccion-admin {
+  margin: 0 0 6px;
+  font-size: 0.92rem;
+  color: var(--azul-claro);
+}
+
+.participante-admin {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  border-radius: 8px;
+  background: var(--tarjeta-bg-2);
+  border: 1px solid var(--borde-sutil);
+}
+
+.participante-admin.estado-aprobada { background: rgba(46, 204, 113, 0.12); border-color: rgba(46, 204, 113, 0.32); }
+.participante-admin.estado-rechazada { background: rgba(211, 47, 47, 0.12); border-color: rgba(211, 47, 47, 0.32); }
+
+.pa-nombre {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--texto-claro);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pa-estado {
+  flex-shrink: 0;
+  padding: 6px 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--texto-claro);
+  background: var(--azul-oscuro);
+  border: 1px solid var(--borde-sutil);
+  border-radius: 6px;
+}
 
 .control-jornada {
   margin: 14px 0;

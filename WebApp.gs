@@ -57,6 +57,7 @@ function doGet(e) {
     if (accion === "registros") return salidaJson(apiRegistros(ss, e.parameter.jornada));
     if (accion === "miquiniela") return salidaJson(apiMiQuiniela(ss, e.parameter.nombre, e.parameter.jornada));
     if (accion === "quinielas") return salidaJson(apiQuinielasJornada(ss, e.parameter.jornada));
+    if (accion === "participantesJornada") return salidaJson(apiParticipantesJornada(ss, e.parameter.jornada));
 
     return salidaJson({ ok: false, error: "Acción desconocida: " + accion });
   } catch (err) {
@@ -71,6 +72,7 @@ function doPost(e) {
 
     if (body.action === "submit") return salidaJson(apiSubmit(ss, body));
     if (body.action === "guardarResultados") return salidaJson(apiGuardarResultados(ss, body));
+    if (body.action === "actualizarAprobacion") return salidaJson(apiActualizarAprobacion(ss, body));
 
     return salidaJson({ ok: false, error: "Acción desconocida: " + body.action });
   } catch (err) {
@@ -205,6 +207,111 @@ function guardarControlJornada(ss, jornada, capturasAbiertas, quinielasVisibles)
   sheet.getRange(fila, 3).setValue(!!quinielasVisibles);
 }
 
+// ---------- APROBACIONES: confirmar a mano cada quiniela, jornada por jornada ----------
+//
+// A petición tuya, cada quiniela que alguien manda queda "pendiente" hasta
+// que TÚ la apruebas o la rechazas a mano desde la pestaña Admin -- así
+// puedes filtrar a quien no haya pagado o no quieras que participe, aunque
+// siga teniendo el link. Solo las que marques "Aprobada" cuentan en la Tabla
+// general y se ven en la pestaña Quinielas; las "Pendiente" y "Rechazada"
+// quedan fuera de ambas hasta que decidas lo contrario.
+//
+// Vive en su propia hoja, "APROBACIONES" (una fila por persona y jornada),
+// que esta función crea sola la primera vez que hace falta.
+var HOJA_APROBACIONES = "APROBACIONES";
+var ESTADOS_APROBACION = ["pendiente", "aprobada", "rechazada"];
+
+function obtenerHojaAprobaciones(ss) {
+  var sheet = ss.getSheetByName(HOJA_APROBACIONES);
+  if (!sheet) {
+    sheet = ss.insertSheet(HOJA_APROBACIONES);
+    sheet.getRange(1, 1, 1, 3).setValues([["Jornada", "Nombre", "Estado"]]);
+    sheet.getRange(1, 1, 1, 3).setFontWeight("bold");
+  }
+  return sheet;
+}
+
+// Mapa { nombreNormalizado: estado } de todo lo que ya se decidió para una
+// jornada. Lo que NO aparece aquí se trata como "pendiente" (ver abajo) --
+// así una quiniela recién mandada empieza pendiente sin que haga falta
+// escribir nada extra al momento de registrarla.
+function listarAprobacionesJornada(ss, jornada) {
+  var sheet = obtenerHojaAprobaciones(ss);
+  var lastRow = sheet.getLastRow();
+  var mapa = {};
+  if (lastRow >= 2) {
+    var data = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
+    for (var i = 0; i < data.length; i++) {
+      if (Number(data[i][0]) === jornada) {
+        mapa[normalizarNombre(data[i][1])] = data[i][2];
+      }
+    }
+  }
+  return mapa;
+}
+
+function obtenerAprobacion(ss, jornada, nombre) {
+  var mapa = listarAprobacionesJornada(ss, jornada);
+  return mapa[normalizarNombre(nombre)] || "pendiente";
+}
+
+function guardarAprobacion(ss, jornada, nombre, estado) {
+  var sheet = obtenerHojaAprobaciones(ss);
+  var lastRow = sheet.getLastRow();
+  var nombreNorm = normalizarNombre(nombre);
+  var fila = null;
+  if (lastRow >= 2) {
+    var data = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+    for (var i = 0; i < data.length; i++) {
+      if (Number(data[i][0]) === jornada && normalizarNombre(data[i][1]) === nombreNorm) { fila = i + 2; break; }
+    }
+  }
+  if (!fila) {
+    fila = sheet.getLastRow() + 1;
+    sheet.getRange(fila, 1).setValue(jornada);
+    sheet.getRange(fila, 2).setValue(nombre);
+  }
+  sheet.getRange(fila, 3).setValue(estado);
+}
+
+// Le enseña al admin, por jornada, quién se registró y en qué estado está
+// cada quien -- para poder aprobar/rechazar uno por uno desde la pestaña
+// Admin. Es de solo lectura (como "registros"); aprobar/rechazar de verdad
+// es apiActualizarAprobacion, que sí pide PIN.
+function apiParticipantesJornada(ss, jornadaParam) {
+  var jornada = Number(jornadaParam);
+  if (!jornada) return { ok: false, error: "Falta la jornada." };
+
+  var sheet = ss.getSheetByName(HOJA_RESPUESTAS);
+  var lastRow = sheet.getLastRow();
+  var participantes = [];
+  if (lastRow >= PRIMERA_FILA_RESPUESTAS) {
+    var data = sheet.getRange(PRIMERA_FILA_RESPUESTAS, 4, lastRow - PRIMERA_FILA_RESPUESTAS + 1, 2).getValues(); // D=Nombre, E=Jornada
+    var aprobaciones = listarAprobacionesJornada(ss, jornada);
+    for (var i = 0; i < data.length; i++) {
+      var nombre = String(data[i][0] || "").trim();
+      if (!nombre || Number(data[i][1]) !== jornada) continue;
+      participantes.push({ nombre: nombre, estado: aprobaciones[normalizarNombre(nombre)] || "pendiente" });
+    }
+  }
+  return { ok: true, jornada: jornada, participantes: participantes };
+}
+
+function apiActualizarAprobacion(ss, body) {
+  if (String(body.pin || "") !== ADMIN_PIN) {
+    return { ok: false, error: "PIN incorrecto." };
+  }
+  var jornada = Number(body.jornada);
+  var nombre = String(body.nombre || "").trim();
+  var estado = String(body.estado || "");
+  if (!jornada) return { ok: false, error: "Falta la jornada." };
+  if (!nombre) return { ok: false, error: "Falta el nombre." };
+  if (ESTADOS_APROBACION.indexOf(estado) === -1) return { ok: false, error: "Estado inválido." };
+
+  guardarAprobacion(ss, jornada, nombre, estado);
+  return { ok: true, nombre: nombre, estado: estado };
+}
+
 function getPartidosConResultado(ss, jornada) {
   var sheet = ss.getSheetByName(HOJA_PARTIDOS);
   var data = sheet.getDataRange().getValues();
@@ -250,6 +357,7 @@ function apiTabla(ss) {
     var nombres = sheet.getRange(PRIMERA_FILA_RESPUESTAS, 4, numRows, 1).getValues();  // D
     var jornadas = sheet.getRange(PRIMERA_FILA_RESPUESTAS, 5, numRows, 1).getValues(); // E
     var totales = sheet.getRange(PRIMERA_FILA_RESPUESTAS, 33, numRows, 1).getValues(); // AG
+    var aprobaciones = listarAprobacionesJornada(ss, jornada);
 
     for (var i = 0; i < numRows; i++) {
       var nombre = String(nombres[i][0] || "").trim();
@@ -257,6 +365,9 @@ function apiTabla(ss) {
       var total = totales[i][0];
       if (!nombre || jor !== jornada) continue;
       if (total === "" || total === null || total === undefined) continue; // esta jornada aún no se califica
+      // Solo cuentan en la tabla las quinielas que tú ya aprobaste a mano
+      // desde la pestaña Admin -- las pendientes y rechazadas quedan fuera.
+      if ((aprobaciones[normalizarNombre(nombre)] || "pendiente") !== "aprobada") continue;
 
       filas.push({ nombre: nombre, total: Number(total) });
     }
@@ -299,12 +410,13 @@ function apiMiQuiniela(ss, nombreParam, jornadaParam) {
   for (var i = 0; i < 9; i++) {
     marcadores.push({ local: valores[i * 2], visita: valores[i * 2 + 1] });
   }
-  return { ok: true, registrada: true, marcadores: marcadores };
+  return { ok: true, registrada: true, marcadores: marcadores, estado: obtenerAprobacion(ss, jornada, nombre) };
 }
 
-// Devuelve la quiniela de TODOS los que se registraron en una jornada --
+// Devuelve la quiniela de los participantes ya APROBADOS en una jornada --
 // solo cuando TÚ prendiste el interruptor "mostrar las quinielas" para esa
-// jornada desde la pestaña Admin (ver CONTROL_JORNADAS arriba). Mientras ese
+// jornada desde la pestaña Admin (ver CONTROL_JORNADAS arriba) Y solo para
+// quien ya aprobaste uno por uno (ver APROBACIONES arriba). Mientras el
 // interruptor siga apagado se regresa vacío a propósito (aunque alguien
 // llame el endpoint directo), así que esto es decisión tuya, no automática.
 function apiQuinielasJornada(ss, jornadaParam) {
@@ -320,18 +432,26 @@ function apiQuinielasJornada(ss, jornadaParam) {
   var lastRow = sheet.getLastRow();
   if (lastRow < PRIMERA_FILA_RESPUESTAS) return { ok: true, jornada: jornada, quinielasVisibles: true, filas: [] };
 
-  var data = sheet.getRange(PRIMERA_FILA_RESPUESTAS, 4, lastRow - PRIMERA_FILA_RESPUESTAS + 1, 20).getValues(); // D:W
+  var aprobaciones = listarAprobacionesJornada(ss, jornada);
+  var data = sheet.getRange(PRIMERA_FILA_RESPUESTAS, 4, lastRow - PRIMERA_FILA_RESPUESTAS + 1, 30).getValues(); // D..AG
   var filas = [];
   for (var i = 0; i < data.length; i++) {
     var row = data[i];
     if (Number(row[1]) !== jornada) continue;
     var nombre = String(row[0] || "").trim();
     if (!nombre) continue;
+    if ((aprobaciones[normalizarNombre(nombre)] || "pendiente") !== "aprobada") continue;
+
     var marcadores = [];
     for (var j = 0; j < 9; j++) {
       marcadores.push({ local: row[2 + j * 2], visita: row[3 + j * 2] });
     }
-    filas.push({ nombre: nombre, marcadores: marcadores });
+    var puntos = row[29]; // AG = columna 33 = offset 29 desde D (columna 4)
+    filas.push({
+      nombre: nombre,
+      marcadores: marcadores,
+      puntos: (puntos === "" || puntos === null || puntos === undefined) ? null : Number(puntos)
+    });
   }
   return { ok: true, jornada: jornada, quinielasVisibles: true, filas: filas };
 }

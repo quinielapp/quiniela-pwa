@@ -65,45 +65,88 @@ function cambiarVista(nombre) {
 async function apiGet(accion, params) {
   let url = WEBAPP_URL + "?action=" + accion;
   if (params) {
-    Object.keys(params).forEach(function (k) { url += "&" + k + "=" + encodeURIComponent(params[k]); });
+    Object.keys(params).forEach(function (k) {
+      const v = params[k];
+      // Si no hay valor, el parámetro ni se manda -- así el backend puede
+      // resolver solo cosas como "cuál es la jornada activa" en vez de que
+      // el celular tenga que pedirlo aparte primero (ver fetchConReintento).
+      if (v === undefined || v === null || v === "") return;
+      url += "&" + k + "=" + encodeURIComponent(v);
+    });
   }
-  const resp = await fetch(url);
-  return resp.json();
+  return fetchConReintento(url, {});
 }
 
 async function apiPost(body) {
   // OJO: content-type "text/plain" a propósito -- evita que el navegador mande
   // una petición OPTIONS de preflight, que Apps Script Web Apps no responde.
-  const resp = await fetch(WEBAPP_URL, {
+  return fetchConReintento(WEBAPP_URL, {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify(body),
   });
-  return resp.json();
+}
+
+// Google Apps Script tarda uno o varios segundos CADA VEZ que arranca para
+// contestar, y si varios participantes abren la app casi al mismo tiempo
+// (por ejemplo antes de que cierren las capturas) a veces de plano no
+// alcanza a responder -- eso es lo que se veía como "no se pudo conectar
+// con el Sheet" aunque el internet estuviera perfecto. Para que eso se
+// arregle solo la mayoría de las veces sin que el participante tenga que
+// darse cuenta ni volver a tocar nada: cada petición espera hasta 18
+// segundos, y si no contesta a tiempo (o falla por un problema de red
+// pasajero), se reintenta una sola vez más antes de rendirse de verdad.
+// Reintentar es seguro incluso para guardar cosas (submit/guardarResultados/
+// actualizarAprobacion): si la primera ya se había guardado pero la
+// respuesta se perdió en el camino, repetirla nada más vuelve a guardar lo
+// mismo -- y en el caso de "submit" en particular, el propio Sheet detecta
+// que ya existe esa quiniela y avisa en vez de duplicar la fila.
+async function fetchConReintento(url, opts) {
+  let ultimoError;
+  for (let intento = 1; intento <= 2; intento++) {
+    const controlador = new AbortController();
+    const timeoutId = setTimeout(function () { controlador.abort(); }, 18000);
+    try {
+      const resp = await fetch(url, Object.assign({}, opts, { signal: controlador.signal }));
+      clearTimeout(timeoutId);
+      return await resp.json();
+    } catch (err) {
+      clearTimeout(timeoutId);
+      ultimoError = err;
+      if (intento < 2) {
+        await new Promise(function (r) { setTimeout(r, 700); });
+      }
+    }
+  }
+  throw ultimoError;
 }
 
 async function iniciarCapturar() {
-  const cont = document.getElementById("contenido-capturar");
-  cont.innerHTML = '<p class="centro">Cargando partidos…</p>';
-  try {
-    const activa = await apiGet("activa");
-    if (!activa.ok) throw new Error(activa.error || "No se pudo leer la jornada activa.");
-    await cargarJornada(activa.jornada);
-  } catch (err) {
-    cont.innerHTML = '<div class="aviso error">Sin conexión con el Sheet ahorita. Intenta de nuevo en un momento.<br><small>' + escaparHtml(String(err.message || err)) + "</small></div>";
-  }
+  // Antes esto pedía "activa" aparte, nada más para saber qué jornada pedir
+  // después con "partidos" -- dos idas y vueltas completas a Apps Script, una
+  // detrás de otra, solo para la primera pantalla que ve cualquiera al abrir
+  // la app. Ahora "partidos" sabe resolver sola cuál es la jornada activa
+  // cuando no se le manda ninguna, así que de una vez se pide directo.
+  await cargarJornada(null);
 }
 
 // Pide y muestra una jornada específica (la usa tanto la carga inicial como
-// las flechitas de "< Jornada N >" para moverse entre semanas).
+// las flechitas de "< Jornada N >" para moverse entre semanas). jornada=null
+// significa "la que esté activa ahorita", y el backend la resuelve solo.
 async function cargarJornada(jornada) {
   const cont = document.getElementById("contenido-capturar");
   cont.innerHTML = '<p class="centro">Cargando partidos…</p>';
   estado.jornada = jornada;
   try {
-    const datos = await apiGet("partidos", { jornada: jornada });
+    // Esto, lo que antes era mi quiniela aparte ("miquiniela") y la lista de
+    // registrados ("registros") se piden TODO junto en esta sola llamada --
+    // antes eran hasta 3 idas y vueltas distintas a Apps Script (cada una con
+    // su propio arranque lento) solo para mostrar esta pestaña.
+    const nombreGuardado = (localStorage.getItem("quiniela_nombre") || "").trim();
+    const datos = await apiGet("partidos", { jornada: jornada, nombre: nombreGuardado });
     if (!datos.ok) {
-      cont.innerHTML = navJornadaHtml(jornada) + '<div class="aviso info">' + escaparHtml(datos.error) + "</div>";
+      estado.jornada = datos.jornada || jornada;
+      cont.innerHTML = navJornadaHtml(datos.jornada || jornada || "") + '<div class="aviso info">' + escaparHtml(datos.error) + "</div>";
       activarNavJornada();
       document.getElementById("form-quiniela").style.display = "none";
       document.getElementById("registrados").innerHTML = "";
@@ -115,29 +158,20 @@ async function cargarJornada(jornada) {
 
     // Si esta persona ya mandó su quiniela para esta jornada, en vez del
     // formulario vacío se le muestra lo que ya registró (de solo lectura) --
-    // así puede consultarlo sin tener que pedírtelo a ti.
+    // así puede consultarlo sin tener que pedírtelo a ti. Esto se pide
+    // SIEMPRE que haya un nombre guardado, sin importar si la jornada ya
+    // cerró o no -- si solo se pidiera cuando sigue abierta, al refrescar la
+    // pestaña Capturar después de que ya se capturaron los resultados reales,
+    // parecería que "no habías registrado nada" aunque sí lo hubieras hecho.
     let miQuiniela = null;
     let miEstado = null;
-    const nombreGuardado = (localStorage.getItem("quiniela_nombre") || "").trim();
-    // OJO: esto se pide SIEMPRE que haya un nombre guardado, sin importar si
-    // la jornada ya cerró o no -- antes solo se pedía cuando seguía abierta,
-    // y por eso al refrescar la pestaña Capturar después de que ya se
-    // capturaron los resultados reales, parecía que "no habías registrado
-    // nada" aunque sí lo hubieras hecho.
-    if (nombreGuardado) {
-      try {
-        const mia = await apiGet("miquiniela", { nombre: nombreGuardado, jornada: datos.jornada });
-        if (mia.ok && mia.registrada) {
-          miQuiniela = mia.marcadores;
-          miEstado = mia.estado;
-        }
-      } catch (err) {
-        // si falla esta consulta extra, no pasa nada -- se muestra el formulario normal
-      }
+    if (datos.miQuiniela && datos.miQuiniela.ok && datos.miQuiniela.registrada) {
+      miQuiniela = datos.miQuiniela.marcadores;
+      miEstado = datos.miQuiniela.estado;
     }
 
     renderPartidos(datos, miQuiniela, miEstado);
-    cargarRegistros(datos.jornada);
+    renderRegistros(datos.registros);
   } catch (err) {
     cont.innerHTML = '<div class="aviso error">Sin conexión con el Sheet ahorita.<br><small>' + escaparHtml(String(err.message || err)) + "</small></div>";
   }
@@ -275,27 +309,35 @@ function escudoHtml(nombreEquipo) {
   return '<img class="escudo" src="./logos/' + encodeURIComponent(nombre) + '.png" alt="" loading="lazy" onerror="this.style.display=\'none\'">';
 }
 
+// Usada después de mandar una quiniela nueva (ahí sí hace falta pedirlo
+// aparte, porque lo que se acaba de registrar no venía en ninguna respuesta
+// previa). Para la carga normal de la pestaña, "registros" ya viene incluido
+// dentro de la respuesta de "partidos" -- ver renderRegistros más abajo.
 async function cargarRegistros(jornada) {
-  const cont = document.getElementById("registrados");
   try {
     const datos = await apiGet("registros", { jornada: jornada });
-    if (!datos.ok) { cont.innerHTML = ""; return; }
-    const chips = datos.nombres.map(function (n, idx) {
-      return '<span class="chip-nombre"><span class="chip-nombre-num">' + (idx + 1) + '</span>' + escaparHtml(n) + "</span>";
-    }).join("");
-    cont.innerHTML =
-      '<div class="tarjeta">' +
-      '<div class="registrados-header">' +
-      '<span class="registrados-titulo">Registrados — Jornada ' + jornada + "</span>" +
-      '<span class="chip chip-conteo">' + datos.total + "</span>" +
-      "</div>" +
-      (datos.nombres.length
-        ? '<div class="chips-nombres">' + chips + "</div>"
-        : '<p class="lista-nombres">Todavía nadie se ha registrado.</p>') +
-      "</div>";
+    renderRegistros(datos);
   } catch (err) {
-    cont.innerHTML = "";
+    document.getElementById("registrados").innerHTML = "";
   }
+}
+
+function renderRegistros(datos) {
+  const cont = document.getElementById("registrados");
+  if (!datos || !datos.ok) { cont.innerHTML = ""; return; }
+  const chips = datos.nombres.map(function (n, idx) {
+    return '<span class="chip-nombre"><span class="chip-nombre-num">' + (idx + 1) + '</span>' + escaparHtml(n) + "</span>";
+  }).join("");
+  cont.innerHTML =
+    '<div class="tarjeta">' +
+    '<div class="registrados-header">' +
+    '<span class="registrados-titulo">Registrados — Jornada ' + datos.jornada + "</span>" +
+    '<span class="chip chip-conteo">' + datos.total + "</span>" +
+    "</div>" +
+    (datos.nombres.length
+      ? '<div class="chips-nombres">' + chips + "</div>"
+      : '<p class="lista-nombres">Todavía nadie se ha registrado.</p>') +
+    "</div>";
 }
 
 async function enviarQuiniela(ev) {
@@ -354,6 +396,20 @@ function renderTabla(datos) {
   const miNombre = (localStorage.getItem("quiniela_nombre") || "").trim().toLowerCase();
   const cont = document.getElementById("contenido-tabla");
   const medallas = { 1: "🥇", 2: "🥈", 3: "🥉" };
+
+  // A petición tuya: cuando dos o más quedan con los mismos puntos, el
+  // desempate es quien haya capturado el total de goles de la jornada más
+  // cerca del total real (columna "Goles" de abajo) -- se enseña esa columna
+  // siempre, no solo cuando hay empate, para que nadie se quede con la duda
+  // de por qué alguien quedó arriba con los mismos puntos.
+  let huboEmpate = false;
+  for (let i = 1; i < datos.filas.length; i++) {
+    if (datos.filas[i].total === datos.filas[i - 1].total) { huboEmpate = true; break; }
+  }
+  const notaDesempate = huboEmpate
+    ? '<p class="nota-control">Hay empate en puntos esta jornada -- desempata quien haya quedado más cerca del total real de goles (' + datos.totalGolesJornada + ' goles en toda la jornada), sin importar si se pasó o se quedó corto.</p>'
+    : "";
+
   const filas = datos.filas.map(function (fila, idx) {
     const puesto = idx + 1;
     const esYo = fila.nombre.trim().toLowerCase() === miNombre;
@@ -368,15 +424,17 @@ function renderTabla(datos) {
       '<td class="celda-puesto">' + badge + "</td>" +
       '<td class="celda-nombre">' + escaparHtml(fila.nombre) + (esYo ? ' <span class="chip-tu">tú</span>' : "") + "</td>" +
       '<td class="total">' + fila.total + "</td>" +
+      '<td class="celda-goles">' + fila.golesQuiniela + "</td>" +
       "</tr>"
     );
   }).join("");
 
   cont.innerHTML =
     '<div class="tarjeta tabla-scroll">' +
+    notaDesempate +
     '<table class="tabla-general">' +
-    "<thead><tr><th></th><th>Nombre</th><th>Jornada " + datos.jornada + "</th></tr></thead>" +
-    "<tbody>" + (filas || '<tr><td colspan="3" class="centro">Todavía nadie se ha registrado.</td></tr>') + "</tbody>" +
+    "<thead><tr><th></th><th>Nombre</th><th>Jornada " + datos.jornada + '</th><th title="Suma de los 9 marcadores que capturó (local + visita) -- se usa para desempatar">Goles</th></tr></thead>' +
+    "<tbody>" + (filas || '<tr><td colspan="4" class="centro">Todavía nadie se ha registrado.</td></tr>') + "</tbody>" +
     "</table>" +
     "</div>";
 }
@@ -394,17 +452,22 @@ async function cargarQuinielas(jornadaParam) {
   const cont = document.getElementById("contenido-quinielas");
   cont.innerHTML = '<p class="centro">Cargando…</p>';
   try {
-    let jornada = jornadaParam;
-    if (!jornada) {
-      const activa = await apiGet("activa");
-      if (!activa.ok) throw new Error(activa.error || "No se pudo leer la jornada activa.");
-      jornada = activa.jornada;
-    }
-    estadoQuinielas.jornada = jornada;
+    // "partidos" y "quinielas" se piden AL MISMO TIEMPO (en paralelo) en vez
+    // de uno después del otro -- antes había que esperar primero la
+    // respuesta de "activa" y luego la de "partidos" nada más para saber si
+    // tocaba pedir "quinielas", una idas-y-vueltas detrás de otra. El backend
+    // ahora resuelve solo la jornada activa si no se le manda ninguna, así
+    // que se lanzan las dos peticiones de una vez; si al final resulta que
+    // las quinielas no están visibles, el resultado de esa llamada paralela
+    // simplemente no se usa.
+    const [datos, quinielas] = await Promise.all([
+      apiGet("partidos", { jornada: jornadaParam }),
+      apiGet("quinielas", { jornada: jornadaParam }),
+    ]);
 
-    const datos = await apiGet("partidos", { jornada: jornada });
     if (!datos.ok) {
-      cont.innerHTML = navJornadaQuinielasHtml(jornada) + '<div class="aviso info">' + escaparHtml(datos.error) + "</div>";
+      estadoQuinielas.jornada = datos.jornada || jornadaParam;
+      cont.innerHTML = navJornadaQuinielasHtml(datos.jornada || jornadaParam || "") + '<div class="aviso info">' + escaparHtml(datos.error) + "</div>";
       activarNavJornadaQuinielas();
       return;
     }
@@ -418,7 +481,6 @@ async function cargarQuinielas(jornadaParam) {
       return;
     }
 
-    const quinielas = await apiGet("quinielas", { jornada: datos.jornada });
     if (!quinielas.ok) throw new Error(quinielas.error || "No se pudieron leer las quinielas.");
     renderQuinielas(datos, quinielas.filas);
   } catch (err) {
@@ -577,22 +639,25 @@ async function cargarResultadosAdmin(jornadaParam) {
   const cont = document.getElementById("contenido-resultados");
   cont.innerHTML = '<p class="centro">Cargando partidos…</p>';
   try {
-    let jornada = jornadaParam;
-    if (!jornada) {
-      const activa = await apiGet("activa");
-      if (!activa.ok) throw new Error(activa.error || "No se pudo leer la jornada activa.");
-      jornada = activa.jornada;
-    }
-    estadoAdmin.jornada = jornada;
-    const datos = await apiGet("partidos", { jornada: jornada });
+    // "partidos" y "participantesJornada" se piden AL MISMO TIEMPO (en
+    // paralelo) -- antes "participantesJornada" se pedía hasta que ya había
+    // terminado de llegar "partidos" (y encima después de "activa" aparte),
+    // una detrás de otra. El backend ya sabe resolver solo la jornada activa
+    // para ambas si no se le manda ninguna, así que no hace falta esperar.
+    const [datos, participantesResp] = await Promise.all([
+      apiGet("partidos", { jornada: jornadaParam }),
+      apiGet("participantesJornada", { jornada: jornadaParam }),
+    ]);
+
     if (!datos.ok) {
-      cont.innerHTML = navJornadaAdminHtml(jornada) + '<div class="aviso info">' + escaparHtml(datos.error) + "</div>";
+      estadoAdmin.jornada = datos.jornada || jornadaParam;
+      cont.innerHTML = navJornadaAdminHtml(datos.jornada || jornadaParam || "") + '<div class="aviso info">' + escaparHtml(datos.error) + "</div>";
       activarNavJornadaAdmin();
       return;
     }
     estadoAdmin.jornada = datos.jornada;
     estadoAdmin.partidos = datos.partidos;
-    renderResultadosAdmin(datos);
+    renderResultadosAdmin(datos, participantesResp);
   } catch (err) {
     cont.innerHTML = '<div class="aviso error">Sin conexión con el Sheet ahorita.<br><small>' + escaparHtml(String(err.message || err)) + "</small></div>";
   }
@@ -619,7 +684,7 @@ function cambiarJornadaAdmin(delta) {
   cargarResultadosAdmin(nueva);
 }
 
-function renderResultadosAdmin(datos) {
+function renderResultadosAdmin(datos, participantesResp) {
   const cont = document.getElementById("contenido-resultados");
   const filas = datos.partidos.map(function (p, i) {
     return (
@@ -639,17 +704,31 @@ function renderResultadosAdmin(datos) {
     ? '<p class="nota-control">Ya están los 9 resultados reales de esta jornada, así que de cualquier forma ya no se aceptan capturas nuevas, aunque dejes marcada la primera casilla.</p>'
     : "";
 
+  // A petición tuya, la lista de participantes ahora es una lista
+  // desplegable (como las tarjetas de la pestaña Quinielas) en vez de estar
+  // siempre abierta -- así no tienes que hacer scroll por todos los
+  // participantes nada más para llegar al botón "Guardar" de hasta abajo.
+  // Arranca CERRADA siempre, pero el encabezado ya te dice cuántos siguen
+  // pendientes de aprobar, para que sepas si vale la pena abrirla.
+  const pendientesCount = (participantesResp && participantesResp.ok)
+    ? participantesResp.participantes.filter(function (p) { return p.estado === "pendiente"; }).length
+    : 0;
+  const badgePendientes = pendientesCount
+    ? ' <span class="chip chip-conteo" style="background:var(--dorado-claro,#e8b84b);color:var(--azul-oscuro,#0b1a2b);">' + pendientesCount + " pendiente" + (pendientesCount === 1 ? "" : "s") + "</span>"
+    : "";
+
   cont.innerHTML =
     '<div class="tarjeta">' +
     navJornadaAdminHtml(datos.jornada) +
     '<div class="aviso info">Deja un partido en blanco si todavía no termina.</div>' +
     '<div id="lista-resultados">' + filas + "</div>" +
-    '<div class="seccion-admin">' +
-    '<h3 class="titulo-seccion-admin">Participantes — Jornada ' + datos.jornada + "</h3>" +
+    '<style>.seccion-admin > summary.titulo-seccion-admin { cursor: pointer; list-style: revert; } .seccion-admin > summary.titulo-seccion-admin::marker { color: var(--azul-claro, #7ec8ff); }</style>' +
+    '<details class="seccion-admin">' +
+    '<summary class="titulo-seccion-admin">Participantes — Jornada ' + datos.jornada + badgePendientes + "</summary>" +
     '<p class="nota-control">Solo cuentan en la Tabla general y se ven en la pestaña Quinielas los que marques como "Aprobada". Aprueba a quien ya pagó o quieres que participe; rechaza al resto (aunque tengan el link).</p>' +
     '<div id="lista-participantes-admin"><p class="centro">Cargando participantes…</p></div>' +
     '<div id="mensaje-participantes-admin"></div>' +
-    "</div>" +
+    "</details>" +
     '<div class="control-jornada">' +
     '<label class="chk-control"><input type="checkbox" id="chk-capturas-abiertas"' + (datos.capturasManual ? " checked" : "") + '><span>Aceptar capturas de quiniela para esta jornada</span></label>' +
     '<label class="chk-control"><input type="checkbox" id="chk-quinielas-visibles"' + (datos.quinielasVisibles ? " checked" : "") + '><span>Mostrar las quinielas capturadas a todos (pestaña "Quinielas")</span></label>' +
@@ -661,28 +740,22 @@ function renderResultadosAdmin(datos) {
 
   activarNavJornadaAdmin();
   document.getElementById("btn-guardar-resultados").addEventListener("click", guardarResultadosAdmin);
-  cargarParticipantesAdmin(datos.jornada);
+
+  // "participantesJornada" ya se pidió en paralelo con "partidos" desde
+  // cargarResultadosAdmin -- aquí nada más se renderiza lo que ya llegó, sin
+  // tener que hacer una llamada aparte.
+  const contParticipantes = document.getElementById("lista-participantes-admin");
+  if (participantesResp && participantesResp.ok) {
+    renderParticipantesAdmin(participantesResp.participantes, datos.jornada);
+  } else if (contParticipantes) {
+    contParticipantes.innerHTML = '<p class="centro">No se pudo cargar la lista de participantes.</p>';
+  }
 }
 
 // Lista de quién se registró en esta jornada, con un selector de estado
 // (Pendiente / Aprobada / Rechazada) por persona. Cada cambio se guarda de
 // inmediato -- no hace falta darle al botón "Guardar" de hasta abajo para
 // esto (ese es solo para los resultados y las dos casillas de arriba).
-async function cargarParticipantesAdmin(jornada) {
-  const cont = document.getElementById("lista-participantes-admin");
-  if (!cont) return;
-  try {
-    const datos = await apiGet("participantesJornada", { jornada: jornada });
-    if (!datos.ok) {
-      cont.innerHTML = '<p class="centro">No se pudo cargar la lista de participantes.</p>';
-      return;
-    }
-    renderParticipantesAdmin(datos.participantes, jornada);
-  } catch (err) {
-    cont.innerHTML = '<p class="centro">Sin conexión con el Sheet ahorita.</p>';
-  }
-}
-
 function renderParticipantesAdmin(participantes, jornada) {
   const cont = document.getElementById("lista-participantes-admin");
   if (!participantes.length) {

@@ -139,6 +139,17 @@ main {
   padding: 16px;
 }
 
+/* Solo la pestaña Capturar aprovecha un ancho mayor en pantallas grandes
+   (para el grid de 2 columnas de partidos) -- el resto de pestañas
+   (Tabla, Quinielas, Admin) se quedan exactamente en el mismo ancho de
+   siempre, sin tocar su HTML/CSS para nada. */
+@media (min-width: 720px) {
+  main:has(> #vista-capturar.activa) {
+    max-width: 900px;
+    padding: 20px 24px;
+  }
+}
+
 .vista { display: none; }
 .vista.activa { display: block; }
 
@@ -189,12 +200,13 @@ input[type="text"]::placeholder { color: #5F7396; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--borde-sutil);
   gap: 8px;
+  padding: 12px 14px;
+  background: var(--tarjeta-bg-2);
+  border: 1px solid var(--borde-sutil);
+  border-radius: 14px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
-
-.partido:last-child { border-bottom: none; }
 
 .partido .equipo {
   flex: 1;
@@ -212,13 +224,33 @@ input[type="text"]::placeholder { color: #5F7396; }
   display: block;
 }
 
+/* Estados visuales puramente decorativos (ver actualizarEstadoVisualPartido
+   en app.js): vacío = todavía nadie escribió nada; activo = se está
+   editando ahorita o falta uno de los dos marcadores; capturado = ambos
+   marcadores ya tienen valor, o es una quiniela ya registrada / de solo
+   lectura. Ninguno de los tres cambia qué datos se mandan al guardar. */
+.partido[data-estado="vacio"] {
+  border-style: dashed;
+  border-color: var(--borde-sutil);
+}
+
+.partido[data-estado="activo"] {
+  border-color: var(--dorado);
+  box-shadow: 0 0 0 1px rgba(232, 185, 35, 0.35), 0 4px 14px rgba(0,0,0,0.25);
+}
+
+.partido[data-estado="capturado"] {
+  border-color: rgba(142, 199, 255, 0.35);
+  background: linear-gradient(135deg, var(--tarjeta-bg-2), rgba(142, 199, 255, 0.07));
+}
+
 .escudo {
-  width: 30px;
-  height: 30px;
+  width: 44px;
+  height: 44px;
   object-fit: contain;
   background: #fff;
   border-radius: 50%;
-  padding: 3px;
+  padding: 4px;
   box-shadow: 0 1px 4px rgba(0,0,0,0.3);
 }
 
@@ -348,6 +380,102 @@ button.principal:disabled { background: #aaa; }
 }
 
 .nav-flecha:active { background: #223255; }
+
+/* ---------- encabezado compacto + grid de partidos de la pestaña Capturar ---------- */
+
+#lista-partidos {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+@media (min-width: 720px) {
+  #lista-partidos {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+}
+
+.captura-header-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.captura-header-top .jornada-nav {
+  margin-bottom: 0;
+}
+
+.estado-chip {
+  color: #fff;
+}
+
+.estado-chip-abierta {
+  background: var(--verde);
+  color: #fff;
+}
+
+.estado-chip-cerrada {
+  background: var(--tarjeta-bg-2);
+  color: var(--texto-tenue);
+  border: 1px solid var(--borde-sutil);
+}
+
+.estado-chip-registrados {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: var(--tarjeta-bg-2);
+  color: var(--azul-claro);
+  border: 1px solid var(--borde-sutil);
+}
+
+.progreso-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.progreso-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--tarjeta-bg-2);
+  overflow: hidden;
+}
+
+.progreso-barra {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--azul-claro), var(--dorado));
+  transition: width 0.2s ease;
+}
+
+.progreso-texto {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--texto-tenue);
+  white-space: nowrap;
+}
+
+/* El botón de enviar se queda visible pero sin estorbar mientras se
+   capturan los 9 partidos -- no tapa nada de la lista, nada más se queda
+   pegado abajo al hacer scroll. */
+#form-quiniela.tarjeta {
+  position: sticky;
+  bottom: 10px;
+  z-index: 4;
+  box-shadow: 0 10px 28px rgba(2, 6, 14, 0.55);
+}
 
 .lista-nombres {
   font-size: 0.88rem;

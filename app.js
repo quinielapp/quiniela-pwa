@@ -309,15 +309,19 @@ function renderPartidos(datos, miQuiniela, miEstado) {
   // se le enseña de una vez el resultado real de cada partido (si ya se sabe),
   // de solo lectura.
   const sinCapturaYCerrada = cerrada && !yaRegistrada;
+  const puedeCapturar = !cerrada && !yaRegistrada;
   const bloques = datos.partidos.map(function (p, i) {
     let marcadorHtml;
+    let estadoVisual;
     if (yaRegistrada) {
       marcadorHtml = marcadorFijoHtml(miQuiniela[i].local, miQuiniela[i].visita);
+      estadoVisual = "capturado";
     } else if (sinCapturaYCerrada) {
       marcadorHtml = marcadorFijoHtml(
         p.local_goles === "" ? "—" : p.local_goles,
         p.visita_goles === "" ? "—" : p.visita_goles
       );
+      estadoVisual = "capturado";
     } else {
       marcadorHtml =
         '<div class="marcador">' +
@@ -325,9 +329,10 @@ function renderPartidos(datos, miQuiniela, miEstado) {
         '<span class="vs">-</span>' +
         '<input type="number" inputmode="numeric" min="0" max="15" class="input-resultado" data-lado="visita" value="" placeholder="0">' +
         "</div>";
+      estadoVisual = "vacio";
     }
     return (
-      '<div class="partido" data-i="' + i + '">' +
+      '<div class="partido" data-i="' + i + '" data-estado="' + estadoVisual + '">' +
       '<div class="equipo local">' + escudoHtml(p.local) + '<span class="nombre-equipo">' + escaparHtml(p.local) + "</span></div>" +
       marcadorHtml +
       '<div class="equipo visita">' + escudoHtml(p.visita) + '<span class="nombre-equipo">' + escaparHtml(p.visita) + "</span></div>" +
@@ -360,9 +365,29 @@ function renderPartidos(datos, miQuiniela, miEstado) {
     aviso = '<div class="aviso ' + claseEstado + '">Ya enviaste tu quiniela para esta jornada ⚽ Aquí abajo está lo que registraste — ya no se puede cambiar.' + notaEstado + ' Si te equivocaste, pídele al admin que lo corrija directo en el Sheet.</div>';
   }
 
+  // Encabezado compacto: navegación de jornada + chip de estado (abierta /
+  // cerrada) + cuántos ya se registraron (si ya se sabe de la misma llamada
+  // a "partidos", sin pedir nada aparte). Puramente visual -- no cambia
+  // ninguna de las reglas de arriba.
+  const estadoChipHtml = cerrada
+    ? '<span class="chip estado-chip estado-chip-cerrada">Cerrada</span>'
+    : '<span class="chip estado-chip estado-chip-abierta">Capturas abiertas</span>';
+  const totalRegistrados = (datos.registros && datos.registros.ok) ? datos.registros.total : null;
+  const registrosChipHtml = (totalRegistrados !== null)
+    ? '<span class="chip estado-chip-registrados">' + totalRegistrados + (totalRegistrados === 1 ? " registrado" : " registrados") + "</span>"
+    : "";
+
+  const progresoHtml = puedeCapturar
+    ? '<div class="progreso-wrap">' +
+        '<div class="progreso-track"><div class="progreso-barra" id="progreso-barra" style="width:0%"></div></div>' +
+        '<span class="progreso-texto" id="progreso-texto">0 de ' + datos.partidos.length + " capturados</span>" +
+      "</div>"
+    : "";
+
   cont.innerHTML =
     '<div class="tarjeta">' +
-    navJornadaHtml(datos.jornada) +
+    '<div class="captura-header-top">' + navJornadaHtml(datos.jornada) + estadoChipHtml + registrosChipHtml + "</div>" +
+    progresoHtml +
     aviso +
     '<div id="lista-partidos">' + bloques + "</div>" +
     "</div>";
@@ -371,16 +396,61 @@ function renderPartidos(datos, miQuiniela, miEstado) {
 
   document.getElementById("form-quiniela").style.display = (cerrada || yaRegistrada) ? "none" : "";
 
-  if (!cerrada && !yaRegistrada) {
+  if (puedeCapturar) {
     cont.querySelectorAll(".input-resultado").forEach(function (input) {
       input.addEventListener("input", function () {
         const i = Number(input.closest(".partido").dataset.i);
         const lado = input.dataset.lado;
         const val = parseInt(input.value, 10);
         estado.marcadores[i][lado] = isNaN(val) ? 0 : Math.max(0, Math.min(15, val));
+        actualizarEstadoVisualPartido(input.closest(".partido"));
+        actualizarProgresoCaptura();
       });
+      input.addEventListener("focus", function () { actualizarEstadoVisualPartido(input.closest(".partido")); });
+      input.addEventListener("blur", function () { actualizarEstadoVisualPartido(input.closest(".partido")); });
     });
   }
+}
+
+// Puramente visual: distingue si un partido sigue vacío, se está editando
+// ahorita, o ya tiene los dos marcadores llenos, para pintar su tarjeta
+// distinto en cada caso (ver estilos ".partido[data-estado=...]" en
+// styles.css). No toca para nada "estado.marcadores", que es lo único que
+// de verdad se manda al guardar.
+function actualizarEstadoVisualPartido(divPartido) {
+  if (!divPartido) return;
+  const inputs = divPartido.querySelectorAll(".input-resultado");
+  if (inputs.length < 2) return;
+  const localLleno = inputs[0].value !== "";
+  const visitaLleno = inputs[1].value !== "";
+  let nuevoEstado;
+  if (localLleno && visitaLleno) {
+    nuevoEstado = "capturado";
+  } else if (localLleno || visitaLleno || divPartido.contains(document.activeElement)) {
+    nuevoEstado = "activo";
+  } else {
+    nuevoEstado = "vacio";
+  }
+  divPartido.dataset.estado = nuevoEstado;
+}
+
+// Barra de progreso de la pestaña Capturar: cuenta cuántos de los partidos
+// ya tienen los dos marcadores llenos. Si la barra no está en pantalla
+// (jornada cerrada o ya registrada) no hace nada -- es sólo decoración.
+function actualizarProgresoCaptura() {
+  const barra = document.getElementById("progreso-barra");
+  const texto = document.getElementById("progreso-texto");
+  if (!barra || !texto) return;
+  const partidos = document.querySelectorAll("#lista-partidos .partido");
+  let completos = 0;
+  partidos.forEach(function (p) {
+    const inputs = p.querySelectorAll(".input-resultado");
+    if (inputs.length === 2 && inputs[0].value !== "" && inputs[1].value !== "") completos++;
+  });
+  const total = partidos.length;
+  const pct = total ? Math.round((completos / total) * 100) : 0;
+  barra.style.width = pct + "%";
+  texto.textContent = completos + " de " + total + " capturados";
 }
 
 function marcadorFijoHtml(local, visita) {

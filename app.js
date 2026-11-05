@@ -7,6 +7,86 @@
  */
 const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbxIsPOivqqh4bKGsGFkkFrLvU1NpEEk71Xv0n2e6UgV6luGfJWaUU_LWFfinhMyuuG0Aw/exec";
 
+// ---------- tokens de participante (Vulnerabilidad A de la auditoría) ----------
+//
+// Antes, "ver mi quiniela ya registrada" confiaba nada más en el nombre --
+// cualquiera que supiera el nombre de otro participante podía ver su
+// quiniela. Ahora, cuando el backend acepta un registro nuevo (apiSubmit),
+// regresa un token aleatorio que SOLO ese celular guarda; de ahí en
+// adelante, para volver a leer esa quiniela hay que mandar el nombre Y ese
+// token -- el nombre solo ya no basta. Esto vive en un mapa guardado en
+// localStorage, igual de simple que lo que ya existía para "quiniela_nombre".
+function normalizarNombreCliente(s) {
+  // Debe coincidir exactamente con normalizarNombre() del backend (mismo
+  // algoritmo: sin mayúsculas/minúsculas, sin acentos, sin espacios de
+  // sobra) para que las llaves del mapa de tokens siempre calcen con lo que
+  // el servidor espera.
+  return String(s || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/\s+/g, " ");
+}
+
+function leerMapaTokens() {
+  try {
+    return JSON.parse(localStorage.getItem("quiniela_tokens") || "{}");
+  } catch (err) {
+    return {};
+  }
+}
+
+function guardarTokenParticipante(jornada, nombre, token) {
+  try {
+    const mapa = leerMapaTokens();
+    mapa[jornada + ":" + normalizarNombreCliente(nombre)] = token;
+    localStorage.setItem("quiniela_tokens", JSON.stringify(mapa));
+  } catch (err) {
+    // si localStorage falla (modo privado, cuota llena) no hay nada más que
+    // hacer -- esa persona nada más no podrá consultar su quiniela después
+    // desde este mismo celular, pero su registro en el Sheet sigue intacto.
+  }
+}
+
+function obtenerTokenParticipante(jornada, nombre) {
+  const mapa = leerMapaTokens();
+  return mapa[jornada + ":" + normalizarNombreCliente(nombre)] || "";
+}
+
+// ---------- sesión de administrador (Vulnerabilidad D de la auditoría) ----------
+//
+// Antes, el PIN se guardaba para siempre en localStorage y se mandaba crudo
+// en cada acción de admin. Ahora se manda una sola vez a "adminLogin"; si es
+// correcto, el backend entrega un TOKEN DE SESIÓN con vencimiento (24 horas)
+// -- es ese token, no el PIN, lo que se guarda y se manda de ahí en
+// adelante. Si el token se filtrara, caduca solo.
+function leerSesionAdmin() {
+  try {
+    return JSON.parse(localStorage.getItem("quiniela_admin_sesion") || "null");
+  } catch (err) {
+    return null;
+  }
+}
+
+function guardarSesionAdmin(token, expiraEn) {
+  try {
+    localStorage.setItem("quiniela_admin_sesion", JSON.stringify({ token: token, expiraEn: expiraEn }));
+  } catch (err) {
+    // sin localStorage, el admin tendrá que volver a dar el PIN cada vez que recargue
+  }
+}
+
+function borrarSesionAdmin() {
+  try { localStorage.removeItem("quiniela_admin_sesion"); } catch (err) { /* nada que hacer */ }
+}
+
+function tokenSesionAdminVigente() {
+  const sesion = leerSesionAdmin();
+  if (!sesion || !sesion.token || !sesion.expiraEn) return "";
+  if (Date.now() > sesion.expiraEn) return "";
+  return sesion.token;
+}
+
 const estado = {
   jornada: null,
   partidos: [],
@@ -143,7 +223,22 @@ async function cargarJornada(jornada) {
     // antes eran hasta 3 idas y vueltas distintas a Apps Script (cada una con
     // su propio arranque lento) solo para mostrar esta pestaña.
     const nombreGuardado = (localStorage.getItem("quiniela_nombre") || "").trim();
-    const datos = await apiGet("partidos", { jornada: jornada, nombre: nombreGuardado });
+    // El token de un participante se guarda POR JORNADA (cada registro tiene
+    // el suyo) -- así que para mandar el correcto hace falta saber ya el
+    // número real de la jornada, no basta con "la que esté activa". Si esta
+    // llamada no trae un número de jornada explícito (jornada=null, el caso
+    // de la primera pantalla al abrir la app) y hay un nombre guardado, se
+    // resuelve primero cuál es la jornada activa con una llamada aparte --
+    // barata y sin datos sensibles -- antes de buscar el token en el celular.
+    // En cualquier otra llamada (las flechitas "< Jornada N >") ya se manda
+    // un número concreto y este paso extra ni se activa.
+    let jornadaParaToken = jornada;
+    if (!jornadaParaToken && nombreGuardado) {
+      const activa = await apiGet("activa");
+      if (activa && activa.ok) jornadaParaToken = activa.jornada;
+    }
+    const tokenGuardado = (jornadaParaToken && nombreGuardado) ? obtenerTokenParticipante(jornadaParaToken, nombreGuardado) : "";
+    const datos = await apiGet("partidos", { jornada: jornada, nombre: nombreGuardado, token: tokenGuardado });
     if (!datos.ok) {
       estado.jornada = datos.jornada || jornada;
       cont.innerHTML = navJornadaHtml(datos.jornada || jornada || "") + '<div class="aviso info">' + escaparHtml(datos.error) + "</div>";
@@ -364,6 +459,11 @@ async function enviarQuiniela(ev) {
     });
     if (resp.ok) {
       msg.innerHTML = '<div class="aviso exito">' + escaparHtml(resp.mensaje) + "</div>";
+      // Guarda el token que acompaña a este registro -- es lo que de ahora
+      // en adelante prueba que ESTE celular es el que mandó esta quiniela
+      // (ver Vulnerabilidad A de la auditoría). Sin esto, "ver mi quiniela"
+      // dejaría de funcionar para lo que se acaba de mandar.
+      if (resp.token) guardarTokenParticipante(estado.jornada, nombre, resp.token);
       // Muestra de inmediato lo que se acaba de mandar, de solo lectura --
       // así el participante ve confirmado exactamente lo que quedó guardado.
       // Toda quiniela recién mandada empieza "pendiente" de aprobación.
@@ -625,14 +725,43 @@ function iniciarAdmin() {
   boton.addEventListener("click", abrirAdmin);
 }
 
-function abrirAdmin() {
-  if (!localStorage.getItem("quiniela_admin_pin")) {
-    const pin = window.prompt("PIN de administrador:");
-    if (!pin) return; // canceló, no entra a la pestaña
-    localStorage.setItem("quiniela_admin_pin", pin);
+// A diferencia de antes (donde el PIN se guardaba para siempre y se mandaba
+// crudo en cada petición), ahora se pide el PIN una sola vez para "iniciar
+// sesión" -- el backend lo valida y entrega un token de sesión temporal
+// (24 horas) que es lo único que se guarda de ahí en adelante. Si ya hay una
+// sesión vigente guardada en este celular, no se vuelve a pedir el PIN.
+async function abrirAdmin() {
+  if (!tokenSesionAdminVigente()) {
+    const logrado = await iniciarSesionAdmin();
+    if (!logrado) return; // canceló o el PIN fue incorrecto
   }
   cambiarVista("resultados");
   cargarResultadosAdmin();
+}
+
+async function iniciarSesionAdmin() {
+  const pin = window.prompt("PIN de administrador:");
+  if (!pin) return false; // canceló
+  try {
+    const resp = await apiPost({ action: "adminLogin", pin: pin });
+    if (resp.ok) {
+      guardarSesionAdmin(resp.token, resp.expiraEn);
+      return true;
+    }
+    window.alert(resp.error || "No se pudo iniciar sesión.");
+    return false;
+  } catch (err) {
+    window.alert("No se pudo conectar con el Sheet para validar el PIN. Intenta de nuevo.");
+    return false;
+  }
+}
+
+// Si cualquier acción de admin regresa "no autorizado" (sesión vencida, o
+// se cerró desde otro lado), se borra la sesión guardada en este celular y
+// se le pide a la persona que vuelva a entrar -- en vez de quedarse
+// mandando un token que el servidor ya no va a aceptar nunca.
+function esRespuestaNoAutorizada(resp) {
+  return !resp.ok && String(resp.error || "").toLowerCase().indexOf("autorizado") !== -1;
 }
 
 async function cargarResultadosAdmin(jornadaParam) {
@@ -646,8 +775,14 @@ async function cargarResultadosAdmin(jornadaParam) {
     // para ambas si no se le manda ninguna, así que no hace falta esperar.
     const [datos, participantesResp] = await Promise.all([
       apiGet("partidos", { jornada: jornadaParam }),
-      apiGet("participantesJornada", { jornada: jornadaParam }),
+      apiGet("participantesJornada", { jornada: jornadaParam, token: tokenSesionAdminVigente() }),
     ]);
+
+    if (esRespuestaNoAutorizada(participantesResp)) {
+      borrarSesionAdmin();
+      const reingreso = await iniciarSesionAdmin();
+      if (reingreso) return cargarResultadosAdmin(jornadaParam);
+    }
 
     if (!datos.ok) {
       estadoAdmin.jornada = datos.jornada || jornadaParam;
@@ -756,52 +891,83 @@ function renderResultadosAdmin(datos, participantesResp) {
 // (Pendiente / Aprobada / Rechazada) por persona. Cada cambio se guarda de
 // inmediato -- no hace falta darle al botón "Guardar" de hasta abajo para
 // esto (ese es solo para los resultados y las dos casillas de arriba).
+// Vulnerabilidad B de la auditoría: esta función construía cada fila
+// concatenando strings, incluyendo el nombre del participante dentro de un
+// atributo (data-nombre="..."). escaparHtml() nunca fue seguro para eso --
+// solo escapa lo necesario para CONTENIDO de texto, no comillas dentro de un
+// atributo -- así que un nombre con una comilla doble y un manejador de
+// evento (algo como `Juan" onmouseover="...`) podía romper el atributo e
+// inyectar JavaScript que corría en el navegador del ADMIN, justo donde
+// vivía el PIN guardado. Ahora cada fila se construye con el DOM directo
+// (createElement + .dataset / .textContent), que nunca permite que un valor
+// "rompa" el HTML sin importar qué caracteres traiga -- no se concatena
+// ningún string con datos de un participante.
+const ETIQUETAS_ESTADO = { pendiente: "Pendiente", aprobada: "Aprobada", rechazada: "Rechazada" };
+
 function renderParticipantesAdmin(participantes, jornada) {
   const cont = document.getElementById("lista-participantes-admin");
+  cont.innerHTML = "";
   if (!participantes.length) {
-    cont.innerHTML = '<p class="centro">Nadie se ha registrado todavía esta jornada.</p>';
+    const vacio = document.createElement("p");
+    vacio.className = "centro";
+    vacio.textContent = "Nadie se ha registrado todavía esta jornada.";
+    cont.appendChild(vacio);
     return;
   }
 
-  const etiquetas = { pendiente: "Pendiente", aprobada: "Aprobada", rechazada: "Rechazada" };
-  cont.innerHTML = participantes.map(function (p) {
-    return (
-      '<div class="participante-admin estado-' + p.estado + '" data-nombre="' + escaparHtml(p.nombre) + '">' +
-      '<span class="pa-nombre">' + escaparHtml(p.nombre) + "</span>" +
-      '<select class="pa-estado">' +
-      ESTADOS_APROBACION_FRONT.map(function (e) {
-        return '<option value="' + e + '"' + (e === p.estado ? " selected" : "") + ">" + etiquetas[e] + "</option>";
-      }).join("") +
-      "</select>" +
-      "</div>"
-    );
-  }).join("");
+  participantes.forEach(function (p) {
+    const fila = document.createElement("div");
+    fila.className = "participante-admin estado-" + p.estado;
+    fila.dataset.nombre = p.nombre; // seguro: el DOM nunca deja que esto rompa el HTML
+
+    const spanNombre = document.createElement("span");
+    spanNombre.className = "pa-nombre";
+    spanNombre.textContent = p.nombre;
+
+    const select = document.createElement("select");
+    select.className = "pa-estado";
+    ESTADOS_APROBACION_FRONT.forEach(function (e) {
+      const opt = document.createElement("option");
+      opt.value = e;
+      opt.textContent = ETIQUETAS_ESTADO[e];
+      if (e === p.estado) opt.selected = true;
+      select.appendChild(opt);
+    });
+
+    fila.appendChild(spanNombre);
+    fila.appendChild(select);
+    cont.appendChild(fila);
+  });
 
   cont.querySelectorAll(".pa-estado").forEach(function (select) {
-    select.addEventListener("change", function () {
+    select.addEventListener("change", async function () {
       const fila = select.closest(".participante-admin");
       const nombre = fila.dataset.nombre;
       const estado = select.value;
       const msg = document.getElementById("mensaje-participantes-admin");
       select.disabled = true;
-      apiPost({
-        action: "actualizarAprobacion",
-        pin: localStorage.getItem("quiniela_admin_pin") || "",
-        jornada: jornada,
-        nombre: nombre,
-        estado: estado,
-      }).then(function (resp) {
+      try {
+        const resp = await apiPost({
+          action: "actualizarAprobacion",
+          token: tokenSesionAdminVigente(),
+          jornada: jornada,
+          nombre: nombre,
+          estado: estado,
+        });
         if (resp.ok) {
           fila.className = "participante-admin estado-" + estado;
           msg.innerHTML = "";
+        } else if (esRespuestaNoAutorizada(resp)) {
+          borrarSesionAdmin();
+          msg.innerHTML = '<div class="aviso error">Tu sesión de admin venció. Vuelve a darle clic al botón 🔒 Admin para entrar de nuevo.</div>';
         } else {
           msg.innerHTML = '<div class="aviso error">' + escaparHtml(resp.error || "No se pudo actualizar.") + "</div>";
         }
-      }).catch(function () {
+      } catch (err) {
         msg.innerHTML = '<div class="aviso error">No se pudo guardar (revisa tu conexión) e intenta de nuevo.</div>';
-      }).finally(function () {
+      } finally {
         select.disabled = false;
-      });
+      }
     });
   });
 }
@@ -829,7 +995,7 @@ async function guardarResultadosAdmin() {
   try {
     const resp = await apiPost({
       action: "guardarResultados",
-      pin: localStorage.getItem("quiniela_admin_pin") || "",
+      token: tokenSesionAdminVigente(),
       jornada: estadoAdmin.jornada,
       resultados: resultados,
       capturasAbiertas: capturasAbiertas,
@@ -838,15 +1004,11 @@ async function guardarResultadosAdmin() {
     if (resp.ok) {
       const avisoCierre = !resp.capturasAbiertas ? " Ya no se aceptan capturas para esta jornada." : "";
       msg.innerHTML = '<div class="aviso exito">' + escaparHtml(resp.mensaje + avisoCierre) + "</div>";
+    } else if (esRespuestaNoAutorizada(resp)) {
+      borrarSesionAdmin();
+      msg.innerHTML = '<div class="aviso error">Tu sesión de admin venció. Vuelve a darle clic al botón 🔒 Admin para entrar de nuevo.</div>';
     } else {
-      const esPinMalo = String(resp.error || "").indexOf("PIN") !== -1;
-      msg.innerHTML =
-        '<div class="aviso error">' + escaparHtml(resp.error) +
-        (esPinMalo ? " Vuelve a darle clic al botón 🔒 Admin para escribirlo de nuevo." : "") +
-        "</div>";
-      if (esPinMalo) {
-        localStorage.removeItem("quiniela_admin_pin");
-      }
+      msg.innerHTML = '<div class="aviso error">' + escaparHtml(resp.error) + "</div>";
     }
   } catch (err) {
     msg.innerHTML = '<div class="aviso error">No se pudo guardar (revisa tu conexión) e intenta de nuevo.</div>';
@@ -856,8 +1018,18 @@ async function guardarResultadosAdmin() {
   }
 }
 
+// Escapa texto para insertarlo como CONTENIDO (entre etiquetas, nunca dentro
+// de un atributo con comillas). Además de lo que ya hacía (& < >), también
+// codifica comillas dobles y simples como defensa adicional -- por si en el
+// futuro alguien reutiliza esta función dentro de un atributo sin darse
+// cuenta, como pasó antes en renderParticipantesAdmin (ver abajo). Para
+// construir ATRIBUTOS con texto que viene de un participante (nombres, etc.)
+// la forma correcta y la que se usa ahora es con el DOM directo
+// (elemento.dataset.algo = valor / elemento.setAttribute(...)), nunca
+// concatenando strings -- eso es lo que de verdad cierra ese tipo de hueco,
+// esta función es nada más un cinturón extra.
 function escaparHtml(texto) {
   const div = document.createElement("div");
   div.textContent = texto === undefined || texto === null ? "" : String(texto);
-  return div.innerHTML;
+  return div.innerHTML.replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }

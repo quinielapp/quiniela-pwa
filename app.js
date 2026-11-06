@@ -293,6 +293,39 @@ function cambiarJornadaMostrada(delta) {
   cargarJornada(nueva);
 }
 
+// Convierte lo que haya en la columna E de PARTIDOS (fecha) a un texto corto
+// tipo "vie 6 nov · 7:00 pm" para mostrar en cada tarjeta. Acepta dos formas,
+// porque según cómo haya quedado la celda en Sheets puede llegar de
+// cualquiera de las dos:
+//  - Texto tal cual se pegó a mano, "DD/MM/AAAA HH:mm" (lo más común).
+//  - Si Sheets lo convirtió solo a una fecha real, Apps Script la manda como
+//    el texto que da Date.toString(), que JS sí entiende directo con
+//    new Date(...).
+// Si no se puede interpretar (o la celda está vacía), regresa "" y
+// sencillamente no se muestra nada -- ningún partido se rompe por esto.
+function formatearFechaPartido(fechaStr) {
+  const s = String(fechaStr || "").trim();
+  if (!s) return "";
+  let d = null;
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})$/);
+  if (m) {
+    d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]), Number(m[4]), Number(m[5]));
+  } else {
+    const intento = new Date(s);
+    if (!isNaN(intento.getTime())) d = intento;
+  }
+  if (!d || isNaN(d.getTime())) return "";
+  const dias = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
+  const meses = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+  let horas = d.getHours();
+  const minutos = String(d.getMinutes()).padStart(2, "0");
+  const ampm = horas >= 12 ? "pm" : "am";
+  horas = horas % 12;
+  if (horas === 0) horas = 12;
+  const diaCap = dias[d.getDay()].charAt(0).toUpperCase() + dias[d.getDay()].slice(1);
+  return diaCap + " " + d.getDate() + " " + meses[d.getMonth()] + " · " + horas + ":" + minutos + " " + ampm;
+}
+
 // miQuiniela: null si todavía puede capturar, o un arreglo [{local,visita}, ...]
 // (uno por partido, en el mismo orden que datos.partidos) si ya la registró
 // -- en ese caso se muestra de solo lectura, ya no editable.
@@ -331,11 +364,16 @@ function renderPartidos(datos, miQuiniela, miEstado) {
         "</div>";
       estadoVisual = "vacio";
     }
+    const fechaFmt = formatearFechaPartido(p.fecha);
+    const fechaHtml = fechaFmt ? '<div class="partido-fecha">' + escaparHtml(fechaFmt) + "</div>" : "";
     return (
       '<div class="partido" data-i="' + i + '" data-estado="' + estadoVisual + '">' +
+      fechaHtml +
+      '<div class="partido-equipos">' +
       '<div class="equipo local">' + escudoHtml(p.local) + '<span class="nombre-equipo">' + escaparHtml(p.local) + "</span></div>" +
       marcadorHtml +
       '<div class="equipo visita">' + escudoHtml(p.visita) + '<span class="nombre-equipo">' + escaparHtml(p.visita) + "</span></div>" +
+      "</div>" +
       "</div>"
     );
   }).join("");

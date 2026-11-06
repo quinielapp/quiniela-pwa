@@ -198,14 +198,31 @@ input[type="text"]::placeholder { color: #5F7396; }
 
 .partido {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
   padding: 12px 14px;
   background: var(--tarjeta-bg-2);
   border: 1px solid var(--borde-sutil);
   border-radius: 14px;
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.partido-fecha {
+  text-align: center;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--texto-tenue);
+  padding-bottom: 6px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--borde-sutil);
+}
+
+.partido-equipos {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .partido .equipo {
